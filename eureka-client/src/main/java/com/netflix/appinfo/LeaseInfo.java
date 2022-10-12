@@ -41,13 +41,21 @@ public class LeaseInfo {
     public static final int DEFAULT_LEASE_DURATION = 90;
 
     // Client settings
+    // 续租间隔时间，，默认是30s
+    // 用于Client 每个30s上报续约一次
     private int renewalIntervalInSecs = DEFAULT_LEASE_RENEWAL_INTERVAL;
+    // 续约持续时间（过期时间）  默认是90s
+    // 用于Server端，90s内没有收到心跳，就剔除掉对应实例
     private int durationInSecs = DEFAULT_LEASE_DURATION;
 
     // Server populated
+    // 租约的注册时间
     private long registrationTimestamp;
+    // 最近一次的续约时间，服务端记录 用于倒计时的起始值
     private long lastRenewalTimestamp;
+    // 下线时间，服务上下线属于比较频繁的操作，但是此时服务实例并未剔除
     private long evictionTimestamp;
+    // 上线时间
     private long serviceUpTimestamp;
 
     public static final class Builder {

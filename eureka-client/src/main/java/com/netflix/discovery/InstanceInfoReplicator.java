@@ -87,6 +87,7 @@ class InstanceInfoReplicator implements Runnable {
     public boolean onDemandUpdate() {
         if (rateLimiter.acquire(burstSize, allowedRatePerMinute)) {
             if (!scheduler.isShutdown()) {
+                // 提交
                 scheduler.submit(new Runnable() {
                     @Override
                     public void run() {
@@ -95,9 +96,10 @@ class InstanceInfoReplicator implements Runnable {
                         Future latestPeriodic = scheduledPeriodicRef.get();
                         if (latestPeriodic != null && !latestPeriodic.isDone()) {
                             logger.debug("Canceling the latest scheduled update, it will be rescheduled at the end of on demand update");
+                            // 取消定时任务
                             latestPeriodic.cancel(false);
                         }
-    
+                        // todo 执行 向 Server端重新 注册的请求
                         InstanceInfoReplicator.this.run();
                     }
                 });
@@ -114,10 +116,13 @@ class InstanceInfoReplicator implements Runnable {
 
     public void run() {
         try {
+            // 刷新实例信息
             discoveryClient.refreshInstanceInfo();
 
+            // 获取脏的时间戳
             Long dirtyTimestamp = instanceInfo.isDirtyWithTime();
             if (dirtyTimestamp != null) {
+                // todo 客户端重新发起  注册请求
                 discoveryClient.register();
                 instanceInfo.unsetIsDirty(dirtyTimestamp);
             }

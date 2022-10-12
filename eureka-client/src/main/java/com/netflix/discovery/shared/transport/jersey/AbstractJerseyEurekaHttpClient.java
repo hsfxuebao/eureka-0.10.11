@@ -50,6 +50,7 @@ public abstract class AbstractJerseyEurekaHttpClient implements EurekaHttpClient
         try {
             Builder resourceBuilder = jerseyClient.resource(serviceUrl).path(urlPath).getRequestBuilder();
             addExtraHeaders(resourceBuilder);
+            // post请求
             response = resourceBuilder
                     .header("Accept-Encoding", "gzip")
                     .type(MediaType.APPLICATION_JSON_TYPE)
@@ -74,6 +75,7 @@ public abstract class AbstractJerseyEurekaHttpClient implements EurekaHttpClient
         try {
             Builder resourceBuilder = jerseyClient.resource(serviceUrl).path(urlPath).getRequestBuilder();
             addExtraHeaders(resourceBuilder);
+            // delete 请求
             response = resourceBuilder.delete(ClientResponse.class);
             return anEurekaHttpResponse(response.getStatus()).headers(headersOf(response)).build();
         } finally {
@@ -100,6 +102,7 @@ public abstract class AbstractJerseyEurekaHttpClient implements EurekaHttpClient
             }
             Builder requestBuilder = webResource.getRequestBuilder();
             addExtraHeaders(requestBuilder);
+            // put请求
             response = requestBuilder.put(ClientResponse.class);
             EurekaHttpResponseBuilder<InstanceInfo> eurekaResponseBuilder = anEurekaHttpResponse(response.getStatus(), InstanceInfo.class).headers(headersOf(response));
             if (response.hasEntity() &&
@@ -128,6 +131,7 @@ public abstract class AbstractJerseyEurekaHttpClient implements EurekaHttpClient
                     .queryParam("lastDirtyTimestamp", info.getLastDirtyTimestamp().toString())
                     .getRequestBuilder();
             addExtraHeaders(requestBuilder);
+            // PUT 请求
             response = requestBuilder.put(ClientResponse.class);
             return anEurekaHttpResponse(response.getStatus()).headers(headersOf(response)).build();
         } finally {
@@ -150,6 +154,7 @@ public abstract class AbstractJerseyEurekaHttpClient implements EurekaHttpClient
                     .queryParam("lastDirtyTimestamp", info.getLastDirtyTimestamp().toString())
                     .getRequestBuilder();
             addExtraHeaders(requestBuilder);
+            // DELETE 请求
             response = requestBuilder.delete(ClientResponse.class);
             return anEurekaHttpResponse(response.getStatus()).headers(headersOf(response)).build();
         } finally {
@@ -187,12 +192,14 @@ public abstract class AbstractJerseyEurekaHttpClient implements EurekaHttpClient
         String regionsParamValue = null;
         try {
             WebResource webResource = jerseyClient.resource(serviceUrl).path(urlPath);
+            // 拼接region
             if (regions != null && regions.length > 0) {
                 regionsParamValue = StringUtil.join(regions);
                 webResource = webResource.queryParam("regions", regionsParamValue);
             }
             Builder requestBuilder = webResource.getRequestBuilder();
             addExtraHeaders(requestBuilder);
+            // 提交get请求
             response = requestBuilder.accept(MediaType.APPLICATION_JSON_TYPE).get(ClientResponse.class);
 
             Applications applications = null;

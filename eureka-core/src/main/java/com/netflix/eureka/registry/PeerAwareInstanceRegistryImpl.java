@@ -89,6 +89,7 @@ import static com.netflix.eureka.Names.METRIC_REGISTRY_PREFIX;
  *
  * @author Karthik Ranganathan, Greg Kim
  *
+ * 服务端 注册表结构实例
  */
 @Singleton
 public class PeerAwareInstanceRegistryImpl extends AbstractInstanceRegistry implements PeerAwareInstanceRegistry {

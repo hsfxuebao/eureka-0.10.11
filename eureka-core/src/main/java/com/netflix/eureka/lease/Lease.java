@@ -38,12 +38,16 @@ public class Lease<T> {
 
     public static final int DEFAULT_DURATION_IN_SECS = 90;
 
+    // 注册的实例信息
     private T holder;
     private long evictionTimestamp;
     private long registrationTimestamp;
+    // 服务启动时间，这个是服务注册的时候传输过来的
     private long serviceUpTimestamp;
     // Make it volatile so that the expiration task would see this quicker
+    // 最近一次的续约时间戳
     private volatile long lastUpdateTimestamp;
+    // 租期，默认是90s,如果客户端有自己的租期，就用客户端自己带过来的
     private long duration;
 
     public Lease(T r, int durationInSecs) {

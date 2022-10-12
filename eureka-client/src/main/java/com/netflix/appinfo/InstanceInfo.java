@@ -50,10 +50,16 @@ import org.slf4j.LoggerFactory;
  * </p>
  *
  * @author Karthik Ranganathan, Greg Kim
+ *
+ * 表示一个实例的信息
  */
+// @ProvidedBy是Guice的注解，用于在Guice的DI依赖注入时生成一个InstanceInfo实例
 @ProvidedBy(EurekaConfigBasedInstanceInfoProvider.class)
+// 序列化/反序列化化使用定制的序列化器
 @Serializer("com.netflix.discovery.converters.EntityBodyConverter")
+// 支持xml的序列化/反序列化  它俩都用instance前缀包裹着。形如{"instance" : {...}} 才行
 @XStreamAlias("instance")
+// 支持json的序列化/反序列化
 @JsonRootName("instance")
 public class InstanceInfo {
 
@@ -89,29 +95,39 @@ public class InstanceInfo {
     public static final int DEFAULT_COUNTRY_ID = 1; // US
 
     // The (fixed) instanceId for this instanceInfo. This should be unique within the scope of the appName.
+    // 实例id. 同一个应用appName的范围内是必须唯一的
     private volatile String instanceId;
 
+    // 应用名称
     private volatile String appName;
+    // 应用组名，多个应用可以分组，很少用，一般为null
     @Auto
     private volatile String appGroupName;
 
+    // 本实例的ip地址
     private volatile String ipAddr;
 
     private static final String SID_DEFAULT = "na";
     @Deprecated
     private volatile String sid = SID_DEFAULT;
 
+    // 端口号，默认7001
     private volatile int port = DEFAULT_PORT;
+    // 安全端口号，默认7002
     private volatile int securePort = DEFAULT_SECURE_PORT;
 
+    // 主页，如http://localhost:8000
     @Auto
     private volatile String homePageUrl;
+    // 状态页面
     @Auto
     private volatile String statusPageUrl;
+    // 健康检查的URL
     @Auto
     private volatile String healthCheckUrl;
     @Auto
     private volatile String secureHealthCheckUrl;
+    // 逻辑地址
     @Auto
     private volatile String vipAddress;
     @Auto
@@ -135,18 +151,35 @@ public class InstanceInfo {
     private volatile boolean isSecurePortEnabled = false;
     private volatile boolean isUnsecurePortEnabled = true;
     private volatile DataCenterInfo dataCenterInfo;
+    // 主机名
     private volatile String hostName;
+    /**
+     *  实例状态 记录当前Client在Server端的状态
+     */
     private volatile InstanceStatus status = InstanceStatus.UP;
+    /**
+     * 解决状态覆盖而存在的属性字段
+     * 该状态用于计算Client在Server端状态status(在Client提交注册请求与Renew续约请求时)
+     */
     private volatile InstanceStatus overriddenStatus = InstanceStatus.UNKNOWN;
+    // 标记实例数据是否是脏的（client和server对比）
     @XStreamOmitField
     private volatile boolean isInstanceInfoDirty = false;
+    // 续约相关信息
     private volatile LeaseInfo leaseInfo;
     @Auto
     private volatile Boolean isCoordinatingDiscoveryServer = Boolean.FALSE;
+    // 自定义元数据
     @XStreamAlias("metadata")
     private volatile Map<String, String> metadata;
+    /**
+     * 记录当前InstanceInfo在Server端被修改的时间
+     */
     @Auto
     private volatile Long lastUpdatedTimestamp;
+    /**
+     * 记录当前InstanceInfo在Client端被修改的时间
+     */
     @Auto
     private volatile Long lastDirtyTimestamp;
     @Auto
@@ -341,6 +374,11 @@ public class InstanceInfo {
         return (id == null) ? 31 : (id.hashCode() + 31);
     }
 
+    /**
+     * 重写了equals方法，只要两个InstanceId 相同，就任务InstanceInfo实例是相同
+     * @param obj
+     * @return
+     */
     @Override
     public boolean equals(Object obj) {
         if (this == obj) {
@@ -353,11 +391,13 @@ public class InstanceInfo {
             return false;
         }
         InstanceInfo other = (InstanceInfo) obj;
+        // 获取InstantId
         String id = getId();
         if (id == null) {
             if (other.getId() != null) {
                 return false;
             }
+        // 比较
         } else if (!id.equals(other.getId())) {
             return false;
         }
