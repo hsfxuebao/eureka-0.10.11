@@ -424,7 +424,10 @@ public class PeerAwareInstanceRegistryImpl extends AbstractInstanceRegistry impl
      * java.lang.String, long, boolean)
      */
     public boolean renew(final String appName, final String id, final boolean isReplication) {
+
+        // todo 调用父类AbstractInstanceRegistry 的renew 方法，变更本地注册表服务实例租约信息
         if (super.renew(appName, id, isReplication)) {
+            // todo 服务续约请求同步给集群的其他节点
             replicateToPeers(Action.Heartbeat, appName, id, null, null, isReplication);
             return true;
         }

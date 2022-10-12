@@ -380,9 +380,11 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
      */
     public boolean renew(String appName, String id, boolean isReplication) {
         RENEW.increment(isReplication);
+        //根据appName 找到对应的实例租约列表
         Map<String, Lease<InstanceInfo>> gMap = registry.get(appName);
         Lease<InstanceInfo> leaseToRenew = null;
         if (gMap != null) {
+            // 通过实例id （instanceId 获取对应实例的租约信息）
             leaseToRenew = gMap.get(id);
         }
         if (leaseToRenew == null) {
@@ -411,7 +413,9 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
 
                 }
             }
+            // renew计数，自我保护机制会用到
             renewsLastMin.increment();
+            // todo 续约
             leaseToRenew.renew();
             return true;
         }
