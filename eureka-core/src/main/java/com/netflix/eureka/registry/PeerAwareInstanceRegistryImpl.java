@@ -447,7 +447,9 @@ public class PeerAwareInstanceRegistryImpl extends AbstractInstanceRegistry impl
     public boolean statusUpdate(final String appName, final String id,
                                 final InstanceStatus newStatus, String lastDirtyTimestamp,
                                 final boolean isReplication) {
+        // todo 先调用父类的statusUpdate方法
         if (super.statusUpdate(appName, id, newStatus, lastDirtyTimestamp, isReplication)) {
+            // 同步给其他实例
             replicateToPeers(Action.StatusUpdate, appName, id, null, newStatus, isReplication);
             return true;
         }

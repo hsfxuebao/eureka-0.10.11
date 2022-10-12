@@ -507,14 +507,17 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
         read.lock();
         try {
             STATUS_UPDATE.increment(isReplication);
+            // 从注册表中找到 实例列表
             Map<String, Lease<InstanceInfo>> gMap = registry.get(appName);
             Lease<InstanceInfo> lease = null;
             if (gMap != null) {
+                // 找到对应的实例
                 lease = gMap.get(id);
             }
             if (lease == null) {
                 return false;
             } else {
+                // 续约，更新最近访问的时间戳
                 lease.renew();
                 InstanceInfo info = lease.getHolder();
                 // Lease is always created with its instance info object.
@@ -524,10 +527,13 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
                 }
                 if ((info != null) && !(info.getStatus().equals(newStatus))) {
                     // Mark service as UP if needed
+                    // 若更新为服务上线状态，
                     if (InstanceStatus.UP.equals(newStatus)) {
+                        // 更新服务启动时间
                         lease.serviceUp();
                     }
                     // This is NAC overridden status
+                    // add
                     overriddenInstanceStatusMap.put(id, newStatus);
                     // Set it for transfer of overridden status to replica on
                     // replica start up
@@ -543,6 +549,7 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
                         info.setLastDirtyTimestamp(replicaDirtyTimestamp);
                     }
                     info.setActionType(ActionType.MODIFIED);
+                    // 本次修改记录到recentlyChangedQueue中
                     recentlyChangedQueue.add(new RecentlyChangedItem(lease));
                     info.setLastUpdatedTimestamp();
                     invalidateCache(appName, info.getVIPAddress(), info.getSecureVipAddress());

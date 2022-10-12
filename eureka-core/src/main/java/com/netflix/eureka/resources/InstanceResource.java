@@ -156,6 +156,7 @@ public class InstanceResource {
      *            last timestamp when this instance information was updated.
      * @return response indicating whether the operation was a success or
      *         failure.
+     *     状态修改
      */
     @PUT
     @Path("status")
@@ -168,6 +169,7 @@ public class InstanceResource {
                 logger.warn("Instance not found: {}/{}", app.getName(), id);
                 return Response.status(Status.NOT_FOUND).build();
             }
+            // todo
             boolean isSuccess = registry.statusUpdate(app.getName(), id,
                     InstanceStatus.valueOf(newStatus), lastDirtyTimestamp,
                     "true".equals(isReplication));
