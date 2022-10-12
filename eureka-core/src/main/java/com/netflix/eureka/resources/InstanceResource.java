@@ -156,7 +156,7 @@ public class InstanceResource {
      *            last timestamp when this instance information was updated.
      * @return response indicating whether the operation was a success or
      *         failure.
-     *     状态修改
+     *     处理客户端状态修改请求
      */
     @PUT
     @Path("status")
@@ -199,6 +199,7 @@ public class InstanceResource {
      *            last timestamp when this instance information was updated.
      * @return response indicating whether the operation was a success or
      *         failure.
+     *    处理客户端删除overridden状态请求
      */
     @DELETE
     @Path("status")
@@ -213,6 +214,7 @@ public class InstanceResource {
             }
 
             InstanceStatus newStatus = newStatusValue == null ? InstanceStatus.UNKNOWN : InstanceStatus.valueOf(newStatusValue);
+            // todo
             boolean isSuccess = registry.deleteStatusOverride(app.getName(), id,
                     newStatus, lastDirtyTimestamp, "true".equals(isReplication));
 

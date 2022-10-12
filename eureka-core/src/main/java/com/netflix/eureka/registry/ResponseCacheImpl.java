@@ -112,8 +112,9 @@ public class ResponseCacheImpl implements ResponseCache {
                 }
             });
 
+    // 只读缓存Map,第一级缓存
     private final ConcurrentMap<Key, Value> readOnlyCacheMap = new ConcurrentHashMap<Key, Value>();
-
+    // 读写缓存Map 第二级缓存
     private final LoadingCache<Key, Value> readWriteCacheMap;
     private final boolean shouldUseReadOnlyResponseCache;
     private final AbstractInstanceRegistry registry;
@@ -126,7 +127,10 @@ public class ResponseCacheImpl implements ResponseCache {
         this.shouldUseReadOnlyResponseCache = serverConfig.shouldUseReadOnlyResponseCache();
         this.registry = registry;
 
+        // readOnlyCacheMap 定时更新的时间，默认30s
         long responseCacheUpdateIntervalMs = serverConfig.getResponseCacheUpdateIntervalMs();
+        // todo 这个ReadWrite 缓存是使用的google guava包里面的CacheLoader缓存。
+        // 如果从readWriteCacheMap中获取不到，会调用CacheLoader的load方法加载
         this.readWriteCacheMap =
                 CacheBuilder.newBuilder().initialCapacity(serverConfig.getInitialCapacityOfResponseCache())
                         .expireAfterWrite(serverConfig.getResponseCacheAutoExpirationInSeconds(), TimeUnit.SECONDS)
@@ -147,12 +151,15 @@ public class ResponseCacheImpl implements ResponseCache {
                                     Key cloneWithNoRegions = key.cloneWithoutRegions();
                                     regionSpecificKeys.put(cloneWithNoRegions, key);
                                 }
+                                // todo
                                 Value value = generatePayload(key);
                                 return value;
                             }
                         });
 
+        // todo 刷新readOnlyCacheMap缓存定时任务 默认30s
         if (shouldUseReadOnlyResponseCache) {
+            // todo
             timer.schedule(getCacheUpdateTask(),
                     new Date(((System.currentTimeMillis() / responseCacheUpdateIntervalMs) * responseCacheUpdateIntervalMs)
                             + responseCacheUpdateIntervalMs),
@@ -178,8 +185,11 @@ public class ResponseCacheImpl implements ResponseCache {
                     }
                     try {
                         CurrentRequestVersion.set(key.getVersion());
+                        // 从readWrite 缓存中获取该key对应的value
                         Value cacheValue = readWriteCacheMap.get(key);
+                        // 从readOnly中获取该key对应缓存的值
                         Value currentCacheValue = readOnlyCacheMap.get(key);
+                        // 如果两个value不一致的话，说明出现了缓存不一致的情况，这个时候就会更新readOnly里面的缓存
                         if (cacheValue != currentCacheValue) {
                             readOnlyCacheMap.put(key, cacheValue);
                         }
@@ -251,6 +261,7 @@ public class ResponseCacheImpl implements ResponseCache {
     public void invalidate(String appName, @Nullable String vipAddress, @Nullable String secureVipAddress) {
         for (Key.KeyType type : Key.KeyType.values()) {
             for (Version v : Version.values()) {
+                // todo 调用invalidate 方法清除
                 invalidate(
                         new Key(Key.EntityType.Application, appName, type, v, EurekaAccept.full),
                         new Key(Key.EntityType.Application, appName, type, v, EurekaAccept.compact),
@@ -279,6 +290,7 @@ public class ResponseCacheImpl implements ResponseCache {
             logger.debug("Invalidating the response cache key : {} {} {} {}, {}",
                     key.getEntityType(), key.getName(), key.getVersion(), key.getType(), key.getEurekaAccept());
 
+            // todo 清理对应key的所有缓存
             readWriteCacheMap.invalidate(key);
             Collection<Key> keysWithRegions = regionSpecificKeys.get(key);
             if (null != keysWithRegions && !keysWithRegions.isEmpty()) {
@@ -352,15 +364,20 @@ public class ResponseCacheImpl implements ResponseCache {
     Value getValue(final Key key, boolean useReadOnlyCache) {
         Value payload = null;
         try {
+            // 如果使用readOnly缓存的话
             if (useReadOnlyCache) {
+                // 先根据key到readOnly缓存中获取
                 final Value currentPayload = readOnlyCacheMap.get(key);
+                // 如果是从readOnly一级缓存中能够获取到的话，直接返回了
                 if (currentPayload != null) {
                     payload = currentPayload;
+                // 如果获取不到的话，就从readWrite 二级缓存中获取，并且将值缓存到readOnly一级缓存中
                 } else {
                     payload = readWriteCacheMap.get(key);
                     readOnlyCacheMap.put(key, payload);
                 }
             } else {
+                // 不使用 readOnly的话，直接从readWriteCacheMap中获取
                 payload = readWriteCacheMap.get(key);
             }
         } catch (Throwable t) {
@@ -415,12 +432,15 @@ public class ResponseCacheImpl implements ResponseCache {
                 case Application:
                     boolean isRemoteRegionRequested = key.hasRegions();
 
+                    // 获取全量注册表
                     if (ALL_APPS.equals(key.getName())) {
                         if (isRemoteRegionRequested) {
                             tracer = serializeAllAppsWithRemoteRegionTimer.start();
+                            // todo
                             payload = getPayLoad(key, registry.getApplicationsFromMultipleRegions(key.getRegions()));
                         } else {
                             tracer = serializeAllAppsTimer.start();
+                            // todo 获取注册表中所有的实例信息
                             payload = getPayLoad(key, registry.getApplications());
                         }
                     } else if (ALL_APPS_DELTA.equals(key.getName())) {

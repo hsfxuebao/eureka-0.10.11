@@ -580,14 +580,17 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
         read.lock();
         try {
             STATUS_OVERRIDE_DELETE.increment(isReplication);
+            // 从注册表获取 实例列表
             Map<String, Lease<InstanceInfo>> gMap = registry.get(appName);
             Lease<InstanceInfo> lease = null;
             if (gMap != null) {
+                // 知道对应的实例
                 lease = gMap.get(id);
             }
             if (lease == null) {
                 return false;
             } else {
+                // 续约，更新最近一次的续约的时间戳
                 lease.renew();
                 InstanceInfo info = lease.getHolder();
 
@@ -597,9 +600,12 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
                     logger.error("Found Lease without a holder for instance id {}", id);
                 }
 
+                // 将执行的Client的overriddenStatus从overriddenInstanceStatusMap中删除
                 InstanceStatus currentOverride = overriddenInstanceStatusMap.remove(id);
                 if (currentOverride != null && info != null) {
+                    // 修改注册表中的该Client状态为UNKOWN
                     info.setOverriddenStatus(InstanceStatus.UNKNOWN);
+                    // todo 如果提交的是CANCEL_OVERRIDE 则newStatus为UNKOWN
                     info.setStatusWithoutDirty(newStatus);
                     long replicaDirtyTimestamp = 0;
                     if (lastDirtyTimestamp != null) {
@@ -611,8 +617,10 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
                         info.setLastDirtyTimestamp(replicaDirtyTimestamp);
                     }
                     info.setActionType(ActionType.MODIFIED);
+                    // 将本次修改写入到recentlyChangedQueue缓存
                     recentlyChangedQueue.add(new RecentlyChangedItem(lease));
                     info.setLastUpdatedTimestamp();
+                    // 清空缓存
                     invalidateCache(appName, info.getVIPAddress(), info.getSecureVipAddress());
                 }
                 return true;
@@ -795,6 +803,7 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
         }
         Applications apps = new Applications();
         apps.setVersion(1L);
+        // todo 遍历 注册表registry
         for (Entry<String, Map<String, Lease<InstanceInfo>>> entry : registry.entrySet()) {
             Application app = null;
 
@@ -1229,8 +1238,12 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
         return list;
     }
 
+    /**
+     * 在服务注册、 服务续约、服务下线的时候，都有说过一个事情，
+     * 就是更新了完了注册表，就会去删除对应的缓存
+     */
     private void invalidateCache(String appName, @Nullable String vipAddress, @Nullable String secureVipAddress) {
-        // invalidate cache
+        // todo invalidate cache
         responseCache.invalidate(appName, vipAddress, secureVipAddress);
     }
 

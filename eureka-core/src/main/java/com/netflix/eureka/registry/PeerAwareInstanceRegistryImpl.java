@@ -152,7 +152,9 @@ public class PeerAwareInstanceRegistryImpl extends AbstractInstanceRegistry impl
     public void init(PeerEurekaNodes peerEurekaNodes) throws Exception {
         this.numberOfReplicationsLastMin.start();
         this.peerEurekaNodes = peerEurekaNodes;
+        // 初始化响应缓存
         initializedResponseCache();
+        // renew定时任务
         scheduleRenewalThresholdUpdateTask();
         initRemoteRegionRegistry();
 
@@ -461,7 +463,9 @@ public class PeerAwareInstanceRegistryImpl extends AbstractInstanceRegistry impl
                                         InstanceStatus newStatus,
                                         String lastDirtyTimestamp,
                                         boolean isReplication) {
+        // todo 调用父类的deleteStatusOverride方法
         if (super.deleteStatusOverride(appName, id, newStatus, lastDirtyTimestamp, isReplication)) {
+            // 同步给其他实例
             replicateToPeers(Action.DeleteStatusOverride, appName, id, null, null, isReplication);
             return true;
         }

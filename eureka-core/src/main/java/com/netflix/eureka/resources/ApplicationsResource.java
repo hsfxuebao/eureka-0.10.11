@@ -112,6 +112,7 @@ public class ApplicationsResource {
      *
      * @return a response containing information about all {@link com.netflix.discovery.shared.Applications}
      *         from the {@link AbstractInstanceRegistry}.
+     *  处理客户端全量下载请求
      */
     @GET
     public Response getContainers(@PathParam("version") String version,
@@ -145,18 +146,22 @@ public class ApplicationsResource {
             returnMediaType = MediaType.APPLICATION_XML;
         }
 
+        // 先是构建一个key对象，注意ALL_APPS 这，说明是获取所有的注册实例信息
         Key cacheKey = new Key(Key.EntityType.Application,
                 ResponseCacheImpl.ALL_APPS,
                 keyType, CurrentRequestVersion.get(), EurekaAccept.fromString(eurekaAccept), regions
         );
 
         Response response;
+        // 判断是否经过压缩
         if (acceptEncoding != null && acceptEncoding.contains(HEADER_GZIP_VALUE)) {
+            // todo 调用getGZIP(cacheKey)
             response = Response.ok(responseCache.getGZIP(cacheKey))
                     .header(HEADER_CONTENT_ENCODING, HEADER_GZIP_VALUE)
                     .header(HEADER_CONTENT_TYPE, returnMediaType)
                     .build();
         } else {
+            // 没有经过压缩，调用responseCache.get(cacheKey)
             response = Response.ok(responseCache.get(cacheKey))
                     .build();
         }
