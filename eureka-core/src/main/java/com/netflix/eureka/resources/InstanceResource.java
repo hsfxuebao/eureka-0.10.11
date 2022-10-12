@@ -101,6 +101,7 @@ public class InstanceResource {
      *            last timestamp when this instance information was updated.
      * @return response indicating whether the operation was a success or
      *         failure.
+     *         服务续约
      */
     @PUT
     public Response renewLease(
@@ -274,11 +275,13 @@ public class InstanceResource {
      *            replicated from other nodes.
      * @return response indicating whether the operation was a success or
      *         failure.
+     *     服务主动下架
      */
     @DELETE
     public Response cancelLease(
             @HeaderParam(PeerEurekaNode.HEADER_REPLICATION) String isReplication) {
         try {
+            // todo
             boolean isSuccess = registry.cancel(app.getName(), id,
                 "true".equals(isReplication));
 

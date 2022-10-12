@@ -384,7 +384,9 @@ public class PeerAwareInstanceRegistryImpl extends AbstractInstanceRegistry impl
     @Override
     public boolean cancel(final String appName, final String id,
                           final boolean isReplication) {
+        // todo 调用父类AbstractInstanceRegistry 的cancel 方法进行本地注册表变更，服务下线就是删除对应的服务实例信息
         if (super.cancel(appName, id, isReplication)) {
+            // 将服务主动下线请求同步给Eureka Server 集群的其他节点。
             replicateToPeers(Action.Cancel, appName, id, null, null, isReplication);
 
             return true;

@@ -40,6 +40,7 @@ public class Lease<T> {
 
     // 注册的实例信息
     private T holder;
+    // 实例剔除时间戳
     private long evictionTimestamp;
     private long registrationTimestamp;
     // 服务启动时间，这个是服务注册的时候传输过来的
