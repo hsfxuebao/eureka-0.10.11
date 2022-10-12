@@ -421,7 +421,7 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
 
                 }
             }
-            // renew计数，自我保护机制会用到
+            // todo renew计数，自我保护机制会用到
             renewsLastMin.increment();
             // todo 续约
             leaseToRenew.renew();
@@ -644,6 +644,9 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
         logger.debug("Running the evict task");
 
         if (!isLeaseExpirationEnabled()) {
+            // 如果服务端允许自我保护且 最近一分钟处理心跳续租请求数 小于等于 预期每分钟收到心跳续租请求数
+            // 则开启自我保护机制，不再清理过期实例
+            // 配置文件可以配置关闭自我保护机制
             logger.debug("DS: lease expiration is currently disabled.");
             return;
         }
@@ -651,12 +654,16 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
         // We collect first all expired items, to evict them in random order. For large eviction sets,
         // if we do not that, we might wipe out whole apps before self preservation kicks in. By randomizing it,
         // the impact should be evenly distributed across all applications.
+        // 新建一个过期实例租约信息列表
         List<Lease<InstanceInfo>> expiredLeases = new ArrayList<>();
         for (Entry<String, Map<String, Lease<InstanceInfo>>> groupEntry : registry.entrySet()) {
             Map<String, Lease<InstanceInfo>> leaseMap = groupEntry.getValue();
             if (leaseMap != null) {
                 for (Entry<String, Lease<InstanceInfo>> leaseEntry : leaseMap.entrySet()) {
                     Lease<InstanceInfo> lease = leaseEntry.getValue();
+                    // 遍历服务端注册表，判断每个实例是否过期
+                    // 如果过期，则将相应实例租约信息添加到 expiredLeases
+                    // todo isExpired() 判断实例过期方法
                     if (lease.isExpired(additionalLeaseMs) && lease.getHolder() != null) {
                         expiredLeases.add(lease);
                     }
@@ -666,10 +673,15 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
 
         // To compensate for GC pauses or drifting local time, we need to use current registry size as a base for
         // triggering self-preservation. Without that we would wipe out full registry.
+        // 获取服务端注册表的实例数
         int registrySize = (int) getLocalRegistrySize();
+        // 计算注册实例数阈值，默认 registrySizeThreshold = 注册实例数 * 0.85
         int registrySizeThreshold = (int) (registrySize * serverConfig.getRenewalPercentThreshold());
+        // 计算清理实例限制数，evictionLimit = 注册实例数 - 注册实例数阈值
         int evictionLimit = registrySize - registrySizeThreshold;
 
+        // 清理实例限制数 和 过期实例数 取最小值作为实际需要清理的实例数
+        // Eureka 这样设计是为了保证可用性和分区容错性，避免一次性清理大量过期实例
         int toEvict = Math.min(expiredLeases.size(), evictionLimit);
         if (toEvict > 0) {
             logger.info("Evicting {} items (expired={}, evictionLimit={})", toEvict, expiredLeases.size(), evictionLimit);
@@ -677,6 +689,8 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
             Random random = new Random(System.currentTimeMillis());
             for (int i = 0; i < toEvict; i++) {
                 // Pick a random item (Knuth shuffle algorithm)
+                // 从过期实例中随机选择下架
+                // Knuth 洗牌算法
                 int next = i + random.nextInt(expiredLeases.size() - i);
                 Collections.swap(expiredLeases, i, next);
                 Lease<InstanceInfo> lease = expiredLeases.get(i);
@@ -685,6 +699,7 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
                 String id = lease.getHolder().getId();
                 EXPIRED.increment();
                 logger.warn("DS: Registry: expired lease for {}/{}", appName, id);
+                // todo 下架实例，并且标识非同步复制集群节点
                 internalCancel(appName, id, false);
             }
         }
@@ -1281,10 +1296,14 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
     }
 
     protected void postInit() {
+        // todo 统计最近一分钟处理的心跳续租数的定时任务
         renewsLastMin.start();
         if (evictionTaskRef.get() != null) {
+            // 取消定期清理过期实例任务
             evictionTaskRef.get().cancel();
         }
+        // 启动新的定期清理过期实例任务
+        // 固定时间重复执行，默认一分钟后开始，每分钟执行一次
         evictionTaskRef.set(new EvictionTask());
         evictionTimer.schedule(evictionTaskRef.get(),
                 serverConfig.getEvictionIntervalTimerInMs(),
@@ -1309,13 +1328,17 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
 
     /* visible for testing */ class EvictionTask extends TimerTask {
 
+        // 最近一次执行清理任务时间
         private final AtomicLong lastExecutionNanosRef = new AtomicLong(0l);
 
         @Override
         public void run() {
             try {
+                //  todo 获取补偿时间
+                // 因时间偏斜或GC，导致任务实际执行时间超过指定的间隔时间（默认一分钟）
                 long compensationTimeMs = getCompensationTimeMs();
                 logger.info("Running the evict task with compensationTime {}ms", compensationTimeMs);
+                // todo 处理过期实例
                 evict(compensationTimeMs);
             } catch (Throwable e) {
                 logger.error("Could not run the evict task", e);
@@ -1329,18 +1352,26 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
          * according to the configured cycle.
          */
         long getCompensationTimeMs() {
+            // 获取当前时间
             long currNanos = getCurrentTimeNano();
+            // 获取最近一次执行任务时间
+            // 并赋值 lastExecutionNanosRef 为当前时间，给下一次执行任务时使用
             long lastNanos = lastExecutionNanosRef.getAndSet(currNanos);
             if (lastNanos == 0l) {
                 return 0l;
             }
 
+            // 计算最近一次任务的实际执行时间 elapsedMs = 当前任务执行时间 - 最近一次任务执行时间
             long elapsedMs = TimeUnit.NANOSECONDS.toMillis(currNanos - lastNanos);
+            // 计算最近一个任务执行的超时时间 compensationTime = 最近一次任务的实际执行时间 - 设定的任务执行间隔时间
             long compensationTime = elapsedMs - serverConfig.getEvictionIntervalTimerInMs();
+            // 如果超时时间大于0，则作为补偿时间返回
+            // 如果超时时间小于等于0，则表示没有超时，返回0
             return compensationTime <= 0l ? 0l : compensationTime;
         }
 
         long getCurrentTimeNano() {  // for testing
+            // 返回当前时间（纳秒）
             return System.nanoTime();
         }
 

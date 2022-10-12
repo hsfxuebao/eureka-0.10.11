@@ -239,15 +239,25 @@ public class PeerAwareInstanceRegistryImpl extends AbstractInstanceRegistry impl
         return count;
     }
 
+    /**
+     *    打开交通，Server端定时清理过期的Client
+     * @param applicationInfoManager
+     * @param count 服务端启动时同步集群节点注册表的实例数，不能为0，如果为0默认赋值1
+     */
     @Override
     public void openForTraffic(ApplicationInfoManager applicationInfoManager, int count) {
         // Renewals happen every 30 seconds and for a minute it should be a factor of 2.
+        // 预期收到心跳续租的实例数赋值
         this.expectedNumberOfClientsSendingRenews = count;
+        // todo 更新预期每分钟收到心跳续租请求数
         updateRenewsPerMinThreshold();
         logger.info("Got {} instances from neighboring DS node", count);
         logger.info("Renew threshold is: {}", numberOfRenewsPerMinThreshold);
+        // 记录服务端启动时间
         this.startupTime = System.currentTimeMillis();
         if (count > 0) {
+            // 设置 peerInstancesTransferEmptyOnStartup = false
+            // 表示服务端启动时同步集群节点注册表的实例数不为空，判断是否允许客户端拉取注册表时提到过
             this.peerInstancesTransferEmptyOnStartup = false;
         }
         DataCenterInfo.Name selfName = applicationInfoManager.getInfo().getDataCenterInfo().getName();
@@ -257,7 +267,9 @@ public class PeerAwareInstanceRegistryImpl extends AbstractInstanceRegistry impl
             primeAwsReplicas(applicationInfoManager);
         }
         logger.info("Changing status to UP");
+        // 设置服务端实例状态为 UP
         applicationInfoManager.setInstanceStatus(InstanceStatus.UP);
+        // todo 调用父类方法
         super.postInit();
     }
 
