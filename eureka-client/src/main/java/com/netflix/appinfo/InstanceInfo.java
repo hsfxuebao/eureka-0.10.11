@@ -51,7 +51,8 @@ import org.slf4j.LoggerFactory;
  *
  * @author Karthik Ranganathan, Greg Kim
  *
- * 表示一个实例的信息
+ * 客户端中，表示自身实例信息
+ * 服务端中，表示实例存在服务端注册表中的信息
  */
 // @ProvidedBy是Guice的注解，用于在Guice的DI依赖注入时生成一个InstanceInfo实例
 @ProvidedBy(EurekaConfigBasedInstanceInfoProvider.class)
@@ -155,11 +156,16 @@ public class InstanceInfo {
     private volatile String hostName;
     /**
      *  实例状态 记录当前Client在Server端的状态
+     *  客户端中，表示自己的真实工作状态
+     *  服务端中，表示服务发现时实例想要暴露给其他实例的工作状态，不一定是实例的真实工作状态
      */
     private volatile InstanceStatus status = InstanceStatus.UP;
     /**
      * 解决状态覆盖而存在的属性字段
      * 该状态用于计算Client在Server端状态status(在Client提交注册请求与Renew续约请求时)
+     *
+     *  覆盖状态，服务端可以根据一定规则匹配出 status
+     *  外界修改实例在服务端中状态（比如通过 actuator 修改状态）就是修改覆盖状态
      */
     private volatile InstanceStatus overriddenStatus = InstanceStatus.UNKNOWN;
     // 标记实例数据是否是脏的（client和server对比）
@@ -348,12 +354,12 @@ public class InstanceInfo {
 
 
     public enum InstanceStatus {
-        UP, // Ready to receive traffic
-        DOWN, // Do not send traffic- healthcheck callback failed
-        STARTING, // Just about starting- initializations to be done - do not
+        UP, // Ready to receive traffic // 启动状态，表示实例对外正常提供服务
+        DOWN, // Do not send traffic- healthcheck callback failed // 下线状态，实例健康检查失败时修改为该状态
+        STARTING, // Just about starting- initializations to be done - do not // 启动中状态，表示实例正在初始化启动中
         // send traffic
-        OUT_OF_SERVICE, // Intentionally shutdown for traffic
-        UNKNOWN;
+        OUT_OF_SERVICE, // Intentionally shutdown for traffic // 停止服务状态，表示实例不对外提供服务
+        UNKNOWN; // 未知状态
 
         public static InstanceStatus toEnum(String s) {
             if (s != null) {

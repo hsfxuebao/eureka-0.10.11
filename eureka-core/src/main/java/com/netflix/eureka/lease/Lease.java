@@ -30,6 +30,7 @@ import com.netflix.eureka.registry.AbstractInstanceRegistry;
  *
  * @author Karthik Ranganathan, Greg Kim
  */
+// 只有服务端维护的实例租约信息类
 public class Lease<T> {
 
     enum Action {
@@ -42,11 +43,12 @@ public class Lease<T> {
     private T holder;
     // 实例剔除时间戳
     private long evictionTimestamp;
+    // 实例注册时间
     private long registrationTimestamp;
-    // 服务启动时间，这个是服务注册的时候传输过来的
+    // 实例启动时间，这个是服务注册的时候传输过来的
     private long serviceUpTimestamp;
     // Make it volatile so that the expiration task would see this quicker
-    // 最近一次的续约时间戳
+    // 实例最近一次的续约时间戳
     private volatile long lastUpdateTimestamp;
     // 租期，默认是90s,如果客户端有自己的租期，就用客户端自己带过来的
     private long duration;

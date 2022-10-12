@@ -72,6 +72,7 @@ import static com.netflix.eureka.util.EurekaMonitors.*;
  *
  * @author Karthik Ranganathan
  *
+ *  服务端具体处理客户端请求（心跳续租、注册、变更状态等等）的类
  */
 public abstract class AbstractInstanceRegistry implements InstanceRegistry {
     private static final Logger logger = LoggerFactory.getLogger(AbstractInstanceRegistry.class);
@@ -84,19 +85,27 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
 
     protected Map<String, RemoteRegionRegistry> regionNameVSRemoteRegistry = new HashMap<String, RemoteRegionRegistry>();
 
-    // 状态map key:InstanceId  value: InstanceStatus
+    // 覆盖状态map key:InstanceId  value: InstanceStatus
     protected final ConcurrentMap<String, InstanceStatus> overriddenInstanceStatusMap = CacheBuilder
             .newBuilder().initialCapacity(500)
             .expireAfterAccess(1, TimeUnit.HOURS)
             .<String, InstanceStatus>build().asMap();
 
     // CircularQueues here for debugging/statistics purposes only
+    // 最近注册队列，实例注册到服务端时添加
+    // 先进先出队列，满1000时移除最先添加的
     private final CircularQueue<Pair<Long, String>> recentRegisteredQueue;
+    // 最近下架队列，实例从服务端下架时添加
+    // 先进先出队列，满1000时移除最先添加的
     private final CircularQueue<Pair<Long, String>> recentCanceledQueue;
+    // 最近变更队列
+    // 有定时任务维护的队列，每30s执行一次，移除添加进该队列超过3分钟的实例变更信息
     private ConcurrentLinkedQueue<RecentlyChangedItem> recentlyChangedQueue = new ConcurrentLinkedQueue<RecentlyChangedItem>();
 
     private final ReentrantReadWriteLock readWriteLock = new ReentrantReadWriteLock();
+    // 读锁（处理客户端注册、下架、状态变更、删除状态时使用）
     private final Lock read = readWriteLock.readLock();
+    // 写锁（处理客户端拉取增量注册表时使用）
     private final Lock write = readWriteLock.writeLock();
     protected final Object lock = new Object();
 
@@ -107,12 +116,16 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
     private final AtomicReference<EvictionTask> evictionTaskRef = new AtomicReference<EvictionTask>();
 
     protected String[] allKnownRemoteRegions = EMPTY_STR_ARRAY;
+    // 服务端统计最近一分钟预期收到客户端实例心跳续租的请求数
     protected volatile int numberOfRenewsPerMinThreshold;
+    // 服务端统计预期收到心跳续租的客户端实例数
     protected volatile int expectedNumberOfClientsSendingRenews;
 
     protected final EurekaServerConfig serverConfig;
     protected final EurekaClientConfig clientConfig;
     protected final ServerCodecs serverCodecs;
+    // 响应缓存
+    // 服务端处理客户端拉取注册表请求时使用
     protected volatile ResponseCache responseCache;
 
     /**
@@ -194,6 +207,7 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
      * Registers a new instance with a given duration.
      *
      * @see com.netflix.eureka.lease.LeaseManager#register(java.lang.Object, int, boolean)
+     * 处理注册
      */
     public void register(InstanceInfo registrant, int leaseDuration, boolean isReplication) {
         // 获取读锁
@@ -313,6 +327,7 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
      * @param isReplication true if this is a replication event from other nodes, false
      *                      otherwise.
      * @return true if the instance was removed from the {@link AbstractInstanceRegistry} successfully, false otherwise.
+     * 处理下架
      */
     @Override
     public boolean cancel(String appName, String id, boolean isReplication) {
@@ -385,6 +400,7 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
      * replication.
      *
      * @see com.netflix.eureka.lease.LeaseManager#renew(java.lang.String, java.lang.String, boolean)
+     * 处理心跳续租
      */
     public boolean renew(String appName, String id, boolean isReplication) {
         RENEW.increment(isReplication);
@@ -499,6 +515,7 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
      * @param isReplication true if this is a replication event from other nodes, false
      *                      otherwise.
      * @return true if the status was successfully updated, false otherwise.
+     * 处理变更状态
      */
     @Override
     public boolean statusUpdate(String appName, String id,
@@ -571,6 +588,7 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
      * @param isReplication true if this is a replication event from other nodes, false
      *                      otherwise.
      * @return true if the status was successfully updated, false otherwise.
+     * 处理删除状态
      */
     @Override
     public boolean deleteStatusOverride(String appName, String id,
@@ -634,6 +652,7 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
      * Evicts everything in the instance registry that has expired, if expiry is enabled.
      *
      * @see com.netflix.eureka.lease.LeaseManager#evict()
+     * 处理 实例过期清理
      */
     @Override
     public void evict() {
@@ -729,6 +748,7 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
      *                            as indicated by the region {@link URL} by this property
      *                            {@link EurekaServerConfig#getRemoteRegionUrls()}, false otherwise
      * @return the application
+     * 处理拉取全量注册表（本地全量注册表+可能包含全部远程region注册表）
      */
     @Override
     public Application getApplication(String appName, boolean includeRemoteRegion) {
@@ -803,6 +823,8 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
      *
      * @return The applications with instances from the passed remote regions as well as local region. The instances
      * from remote regions can be only for certain whitelisted apps as explained above.
+     *
+     * 处理拉取全量注册表(本地全量注册表 + 可能包含指定远程 region 全量注册表)
      */
     public Applications getApplicationsFromMultipleRegions(String[] remoteRegions) {
 
@@ -1015,6 +1037,9 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
      * @return The delta with instances from the passed remote regions as well as local region. The instances
      * from remote regions can be further be restricted as explained above. <code>null</code> if the application does
      * not exist locally or in remote regions.
+     *
+     * 处理拉取增量注册表(本地增量注册表 + 可能包含指定远程 region 增量注册表)
+     *
      */
     public Applications getApplicationDeltasFromMultipleRegions(String[] remoteRegions) {
         if (null == remoteRegions) {

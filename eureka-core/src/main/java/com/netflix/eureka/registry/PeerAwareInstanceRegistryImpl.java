@@ -89,7 +89,7 @@ import static com.netflix.eureka.Names.METRIC_REGISTRY_PREFIX;
  *
  * @author Karthik Ranganathan, Greg Kim
  *
- * 服务端 注册表结构实例
+ * 处理集群节点间相关操作的实现类
  */
 @Singleton
 public class PeerAwareInstanceRegistryImpl extends AbstractInstanceRegistry implements PeerAwareInstanceRegistry {
@@ -98,7 +98,9 @@ public class PeerAwareInstanceRegistryImpl extends AbstractInstanceRegistry impl
     private static final String US_EAST_1 = "us-east-1";
     private static final int PRIME_PEER_NODES_RETRY_MS = 30000;
 
+    // 当前服务端节点的启动时间
     private long startupTime = 0;
+    // 判断服务端启动时同步集群节点注册表的实例数是否为空
     private boolean peerInstancesTransferEmptyOnStartup = true;
 
     public enum Action {
@@ -117,9 +119,11 @@ public class PeerAwareInstanceRegistryImpl extends AbstractInstanceRegistry impl
         }
     };
 
+    // 最近一分钟同步复制给集群节点的次数
     private final MeasuredRate numberOfReplicationsLastMin;
 
     protected final EurekaClient eurekaClient;
+    // 服务端的相邻集群节点，配置文件中配置
     protected volatile PeerEurekaNodes peerEurekaNodes;
 
     private final InstanceStatusOverrideRule instanceStatusOverrideRule;

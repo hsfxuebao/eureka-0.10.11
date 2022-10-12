@@ -73,6 +73,7 @@ import org.slf4j.LoggerFactory;
  *
  * @author Karthik Ranganathan, Greg Kim
  */
+// 响应缓存实现类
 public class ResponseCacheImpl implements ResponseCache {
 
     private static final Logger logger = LoggerFactory.getLogger(ResponseCacheImpl.class);
@@ -115,7 +116,9 @@ public class ResponseCacheImpl implements ResponseCache {
     // 只读缓存Map,第一级缓存
     private final ConcurrentMap<Key, Value> readOnlyCacheMap = new ConcurrentHashMap<Key, Value>();
     // 读写缓存Map 第二级缓存
+    // LoadingCache：Guava 提供的本地缓存，多线程的场景下保证只有一个线程加载相应缓存项
     private final LoadingCache<Key, Value> readWriteCacheMap;
+    // 判断是否使用只读缓存
     private final boolean shouldUseReadOnlyResponseCache;
     private final AbstractInstanceRegistry registry;
     private final EurekaServerConfig serverConfig;
