@@ -934,6 +934,7 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
         Map<String, Application> applicationInstancesMap = new HashMap<String, Application>();
         write.lock();
         try {
+            // 遍历recentlyChangedQueue 队列（服务注册、续约、下线 的时候都会被塞到这最近改变队列中，这个队列只会保留最近三分钟的数据）
             Iterator<RecentlyChangedItem> iter = this.recentlyChangedQueue.iterator();
             logger.debug("The number of elements in the delta queue is : {}",
                     this.recentlyChangedQueue.size());
@@ -969,7 +970,11 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
                     }
                 }
             }
-
+            // 获取全量注册表实例信息，生成一个hashcode，这个hashcode主要是带给客户端，
+            // 客户端收到响应后，先将最近变更是实例信息更新到自己的本地注册表中，
+            // 然后对自己本地注册表实例信息生成一个hashcode ，与
+            // Server响应回来的那个hashcode做比较，如果一样的话，说明本地注册表与Eureka Server的一样，
+            // 如果不一样的话，说明出现了差异，就会全量拉取一次注册表信息放到本地注册表中。
             Applications allApps = getApplications(!disableTransparentFallback);
             apps.setAppsHashCode(allApps.getReconcileHashCode());
             return apps;

@@ -196,6 +196,7 @@ public class ApplicationsResource {
      * @param uriInfo  the {@link java.net.URI} information of the request made.
      * @return response containing the delta information of the
      *         {@link AbstractInstanceRegistry}.
+     *  处理客户端增量下载请求
      */
     @Path("delta")
     @GET
@@ -231,6 +232,7 @@ public class ApplicationsResource {
             returnMediaType = MediaType.APPLICATION_XML;
         }
 
+        // cacheKye ALL_APPS_DELTA 增量拉取
         Key cacheKey = new Key(Key.EntityType.Application,
                 ResponseCacheImpl.ALL_APPS_DELTA,
                 keyType, CurrentRequestVersion.get(), EurekaAccept.fromString(eurekaAccept), regions
@@ -239,11 +241,13 @@ public class ApplicationsResource {
         final Response response;
 
         if (acceptEncoding != null && acceptEncoding.contains(HEADER_GZIP_VALUE)) {
+            // todo
              response = Response.ok(responseCache.getGZIP(cacheKey))
                     .header(HEADER_CONTENT_ENCODING, HEADER_GZIP_VALUE)
                     .header(HEADER_CONTENT_TYPE, returnMediaType)
                     .build();
         } else {
+            // todo
             response = Response.ok(responseCache.get(cacheKey)).build();
         }
 

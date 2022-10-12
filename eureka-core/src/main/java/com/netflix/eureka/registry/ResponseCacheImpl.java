@@ -432,7 +432,7 @@ public class ResponseCacheImpl implements ResponseCache {
                 case Application:
                     boolean isRemoteRegionRequested = key.hasRegions();
 
-                    // 获取全量注册表
+                    // todo 获取全量注册表
                     if (ALL_APPS.equals(key.getName())) {
                         if (isRemoteRegionRequested) {
                             tracer = serializeAllAppsWithRemoteRegionTimer.start();
@@ -443,6 +443,7 @@ public class ResponseCacheImpl implements ResponseCache {
                             // todo 获取注册表中所有的实例信息
                             payload = getPayLoad(key, registry.getApplications());
                         }
+                    // todo 获取增量注册表
                     } else if (ALL_APPS_DELTA.equals(key.getName())) {
                         if (isRemoteRegionRequested) {
                             tracer = serializeDeltaAppsWithRemoteRegionTimer.start();
@@ -454,6 +455,7 @@ public class ResponseCacheImpl implements ResponseCache {
                             tracer = serializeDeltaAppsTimer.start();
                             versionDelta.incrementAndGet();
                             versionDeltaLegacy.incrementAndGet();
+                            // todo
                             payload = getPayLoad(key, registry.getApplicationDeltas());
                         }
                     } else {
