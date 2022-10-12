@@ -83,6 +83,8 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
             = new ConcurrentHashMap<String, Map<String, Lease<InstanceInfo>>>();
 
     protected Map<String, RemoteRegionRegistry> regionNameVSRemoteRegistry = new HashMap<String, RemoteRegionRegistry>();
+
+    // 状态map key:InstanceId  value: InstanceStatus
     protected final ConcurrentMap<String, InstanceStatus> overriddenInstanceStatusMap = CacheBuilder
             .newBuilder().initialCapacity(500)
             .expireAfterAccess(1, TimeUnit.HOURS)
@@ -194,19 +196,28 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
      * @see com.netflix.eureka.lease.LeaseManager#register(java.lang.Object, int, boolean)
      */
     public void register(InstanceInfo registrant, int leaseDuration, boolean isReplication) {
+        // 获取读锁
         read.lock();
         try {
+            /** ---------------------------第一步--------------------------------------------------*/
+            // 先从注册表中 获取对应appName的 map集合
             Map<String, Lease<InstanceInfo>> gMap = registry.get(registrant.getAppName());
             REGISTER.increment(isReplication);
+            // 不存在就创建 并且塞入注册表map中
             if (gMap == null) {
                 final ConcurrentHashMap<String, Lease<InstanceInfo>> gNewMap = new ConcurrentHashMap<String, Lease<InstanceInfo>>();
+                //存在就不会put ，并将存在的那个返回来，不存在的话进行put，返回null
+                // 试想该地使用putIfAbsent 的作用： double check， 虽然使用了ConcurrentHashMap，
+                // 保证了元素增删改查没问题，但是还是不能保证 gNewMap 只存在一个。
                 gMap = registry.putIfAbsent(registrant.getAppName(), gNewMap);
                 if (gMap == null) {
                     gMap = gNewMap;
                 }
             }
+            // 获取该实例id 对应的租约信息
             Lease<InstanceInfo> existingLease = gMap.get(registrant.getId());
             // Retain the last dirty timestamp without overwriting it, if there is already a lease
+            // 如果是存在
             if (existingLease != null && (existingLease.getHolder() != null)) {
                 Long existingLastDirtyTimestamp = existingLease.getHolder().getLastDirtyTimestamp();
                 Long registrationLastDirtyTimestamp = registrant.getLastDirtyTimestamp();
@@ -214,28 +225,37 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
 
                 // this is a > instead of a >= because if the timestamps are equal, we still take the remote transmitted
                 // InstanceInfo instead of the server local copy.
+                // 网络抖动
                 if (existingLastDirtyTimestamp > registrationLastDirtyTimestamp) {
                     logger.warn("There is an existing lease and the existing lease's dirty timestamp {} is greater" +
                             " than the one that is being registered {}", existingLastDirtyTimestamp, registrationLastDirtyTimestamp);
                     logger.warn("Using the existing instanceInfo instead of the new instanceInfo as the registrant");
                     registrant = existingLease.getHolder();
                 }
+            // 不存在的话
             } else {
                 // The lease does not exist and hence it is a new registration
                 synchronized (lock) {
+                    // 这个是与自我保护机制有关的
                     if (this.expectedNumberOfClientsSendingRenews > 0) {
                         // Since the client wants to register it, increase the number of clients sending renews
+                        // 每有一个新的客户端注册进来，就会+1，表示未来要发送心跳的客户端+1
                         this.expectedNumberOfClientsSendingRenews = this.expectedNumberOfClientsSendingRenews + 1;
+                        // todo 更新下 自己能容忍的最少心跳数量
                         updateRenewsPerMinThreshold();
                     }
                 }
                 logger.debug("No previous lease information found; it is new registration");
             }
+
             Lease<InstanceInfo> lease = new Lease<InstanceInfo>(registrant, leaseDuration);
             if (existingLease != null) {
+                // 服务启动时间ServiceUp
                 lease.setServiceUpTimestamp(existingLease.getServiceUpTimestamp());
             }
+            // 塞到注册表中
             gMap.put(registrant.getId(), lease);
+            //放到registed 队列中
             recentRegisteredQueue.add(new Pair<Long, String>(
                     System.currentTimeMillis(),
                     registrant.getAppName() + "(" + registrant.getId() + ")"));
@@ -248,9 +268,11 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
                     overriddenInstanceStatusMap.put(registrant.getId(), registrant.getOverriddenStatus());
                 }
             }
+            // 从本地缓存中获取该实例状态
             InstanceStatus overriddenStatusFromMap = overriddenInstanceStatusMap.get(registrant.getId());
             if (overriddenStatusFromMap != null) {
                 logger.info("Storing overridden status {} from map", overriddenStatusFromMap);
+                // 存在的话，设置进去
                 registrant.setOverriddenStatus(overriddenStatusFromMap);
             }
 
@@ -259,12 +281,17 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
             registrant.setStatusWithoutDirty(overriddenInstanceStatus);
 
             // If the lease is registered with UP status, set lease service up timestamp
+            // 实例状态是up的话，设置下服务启动时间
             if (InstanceStatus.UP.equals(registrant.getStatus())) {
                 lease.serviceUp();
             }
             registrant.setActionType(ActionType.ADDED);
+            /** ---------第2 步 ------------*/
+            // 塞入最近改变队列中
             recentlyChangedQueue.add(new RecentlyChangedItem(lease));
             registrant.setLastUpdatedTimestamp();
+            /** --------- 第3步 ------------*/
+            // 本地缓存失效
             invalidateCache(registrant.getAppName(), registrant.getVIPAddress(), registrant.getSecureVipAddress());
             logger.info("Registered instance {}/{} with status {} (replication={})",
                     registrant.getAppName(), registrant.getId(), registrant.getStatus(), isReplication);
@@ -1189,6 +1216,10 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
     }
 
     protected void updateRenewsPerMinThreshold() {
+        // 客户端数量 * （60 / 心跳间隔）* 自我保护开启的阈值因子)
+        // = (客户端数量 * 每个客户端每分钟发送心跳的数量 * 阈值因子)
+        // = （所有客户端每分钟发送的心跳数量 * 阈值因子）
+        // = 当前Server开启自我保护机制的每分钟最小心跳数量
         this.numberOfRenewsPerMinThreshold = (int) (this.expectedNumberOfClientsSendingRenews
                 * (60.0 / serverConfig.getExpectedClientRenewalIntervalSeconds())
                 * serverConfig.getRenewalPercentThreshold());

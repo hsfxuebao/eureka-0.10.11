@@ -405,11 +405,15 @@ public class PeerAwareInstanceRegistryImpl extends AbstractInstanceRegistry impl
      */
     @Override
     public void register(final InstanceInfo info, final boolean isReplication) {
+        // 默认90s 持续时间 也就是90s的过期时间
         int leaseDuration = Lease.DEFAULT_DURATION_IN_SECS;
+        // 如果客户端存在过期时间的话，就用客户端的
         if (info.getLeaseInfo() != null && info.getLeaseInfo().getDurationInSecs() > 0) {
             leaseDuration = info.getLeaseInfo().getDurationInSecs();
         }
+        // todo 1.调用父类AbstractInstanceRegistry 的注册方法进行注册，更新本地注册表
         super.register(info, leaseDuration, isReplication);
+        // todo 2.集群间节点同步
         replicateToPeers(Action.Register, info.getAppName(), info.getId(), info, null, isReplication);
     }
 
@@ -642,9 +646,11 @@ public class PeerAwareInstanceRegistryImpl extends AbstractInstanceRegistry impl
 
             for (final PeerEurekaNode node : peerEurekaNodes.getPeerEurekaNodes()) {
                 // If the url represents this host, do not replicate to yourself.
+                // 判断是否是自己
                 if (peerEurekaNodes.isThisMyUrl(node.getServiceUrl())) {
                     continue;
                 }
+                // todo
                 replicateInstanceActionsToPeers(action, appName, id, info, newStatus, node);
             }
         } finally {
