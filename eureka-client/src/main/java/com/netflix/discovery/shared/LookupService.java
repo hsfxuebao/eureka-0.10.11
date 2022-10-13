@@ -36,6 +36,7 @@ public interface LookupService<T> {
      * @return a {@link Application} or null if we couldn't locate any app of
      *         the requested appName
      */
+    // // 根据服务实例名称获取 Application
     Application getApplication(String appName);
 
     /**
@@ -44,6 +45,7 @@ public interface LookupService<T> {
      *
      * @return {@link Applications}
      */
+    // 获取当前注册表中所有的服务实例信息
     Applications getApplications();
 
     /**
@@ -55,6 +57,7 @@ public interface LookupService<T> {
      * @return {@link List} of {@link InstanceInfo}s or
      *         {@link java.util.Collections#emptyList()}
      */
+    // 根据服务实例 Id 获取服务实例信息
     List<InstanceInfo> getInstancesById(String id);
 
     /**
