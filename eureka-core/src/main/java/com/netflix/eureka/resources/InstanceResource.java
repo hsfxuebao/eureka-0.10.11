@@ -109,28 +109,47 @@ public class InstanceResource {
             @QueryParam("overriddenstatus") String overriddenStatus,
             @QueryParam("status") String status,
             @QueryParam("lastDirtyTimestamp") String lastDirtyTimestamp) {
+        // isReplication：是否是集群节点间的同步复制请求，如果是客户端服务实例发送续租请求为 null ,如果是集群节点同步复制为 true
+        // overriddenStatus：覆盖状态
+        // status：真实的状态
+        // lastDirtyTimestamp：客户端保存的最新修改时间戳（脏）
+
+
         boolean isFromReplicaNode = "true".equals(isReplication);
-        // todo
+        // todo 调用心跳续租方法
         boolean isSuccess = registry.renew(app.getName(), id, isFromReplicaNode);
 
         // Not found in the registry, immediately ask for a register
         if (!isSuccess) {
             logger.warn("Not Found (Renew): {} - {}", app.getName(), id);
+            // 本地注册表中没有相应实例信息，返回404
+            // 客户端在发起续租心跳请求后收到服务端返回404，会立即再进行注册
             return Response.status(Status.NOT_FOUND).build();
         }
         // Check if we need to sync based on dirty time stamp, the client
         // instance might have changed some value
+
+        // 校验，如果我们需要根据客服端的最新修改时间戳（脏）同步，客户端实例可能需要更改数据
         Response response;
         if (lastDirtyTimestamp != null && serverConfig.shouldSyncWhenTimestampDiffers()) {
+            // 客户端请求中的最新修改时间戳（脏）不为空 且 本地配置的 shouldSyncWhenTimestampDiffers = true 时
+            // shouldSyncWhenTimestampDiffers：检查最新修改时间戳（脏）不同时是否同步实例信息
+            //  todo 检查本地的和客户端保存的最新修改时间戳（脏），根据具体情况返回相应的请求结果
             response = this.validateDirtyTimestamp(Long.valueOf(lastDirtyTimestamp), isFromReplicaNode);
             // Store the overridden status since the validation found out the node that replicates wins
             if (response.getStatus() == Response.Status.NOT_FOUND.getStatusCode()
                     && (overriddenStatus != null)
                     && !(InstanceStatus.UNKNOWN.name().equals(overriddenStatus))
                     && isFromReplicaNode) {
+                // 检查后，如果满足下列三个条件：
+                //     1. 是集群节点同步复制到本地
+                //     2. 本地注册表中相应实例的最新修改时间戳（脏）小于同步复制过来的
+                //     3. 同步复制心跳续租请求中的 overriddenStatus 不为 null 也不为 UNKNOWN
+                //  todo 更新本地相应的实例信息（覆盖状态）
                 registry.storeOverriddenStatusIfRequired(app.getAppName(), id, InstanceStatus.valueOf(overriddenStatus));
             }
         } else {
+            // 返回成功200
             response = Response.ok().build();
         }
         logger.debug("Found (Renew): {} - {}; reply status={}", app.getName(), id, response.getStatus());
@@ -281,23 +300,27 @@ public class InstanceResource {
      *         failure.
      *     服务主动下架
      */
+    // isReplication：是否是集群节点间的同步复制
     @DELETE
     public Response cancelLease(
             @HeaderParam(PeerEurekaNode.HEADER_REPLICATION) String isReplication) {
         try {
-            // todo
+            // todo 处理客户端下架
             boolean isSuccess = registry.cancel(app.getName(), id,
                 "true".equals(isReplication));
 
             if (isSuccess) {
                 logger.debug("Found (Cancel): {} - {}", app.getName(), id);
+                // 处理成功返回200
                 return Response.ok().build();
             } else {
                 logger.info("Not Found (Cancel): {} - {}", app.getName(), id);
+                // 处理失败返回404
                 return Response.status(Status.NOT_FOUND).build();
             }
         } catch (Throwable e) {
             logger.error("Error (cancel): {} - {}", app.getName(), id, e);
+            // 处理异常返回500
             return Response.serverError().build();
         }
 
@@ -305,8 +328,10 @@ public class InstanceResource {
 
     private Response validateDirtyTimestamp(Long lastDirtyTimestamp,
                                             boolean isReplication) {
+        // 获取本地相应实例信息
         InstanceInfo appInfo = registry.getInstanceByAppAndId(app.getName(), id, false);
         if (appInfo != null) {
+            // 客户端实例续租请求中的最新修改时间戳（脏） 和 本地注册表中实例的最新修改时间戳（脏） 不相等时
             if ((lastDirtyTimestamp != null) && (!lastDirtyTimestamp.equals(appInfo.getLastDirtyTimestamp()))) {
                 Object[] args = {id, appInfo.getLastDirtyTimestamp(), lastDirtyTimestamp, isReplication};
 
@@ -315,10 +340,16 @@ public class InstanceResource {
                             "Time to sync, since the last dirty timestamp differs -"
                                     + " ReplicationInstance id : {},Registry : {} Incoming: {} Replication: {}",
                             args);
+                    // 如果 客户端实例续租请求中的最新修改时间戳（脏） 大于 本地注册表中相应实例的最新修改时间戳（脏）
+                    // 返回404，让客户端立即发起注册给当前服务端更新相应实例信息
                     return Response.status(Status.NOT_FOUND).build();
                 } else if (appInfo.getLastDirtyTimestamp() > lastDirtyTimestamp) {
                     // In the case of replication, send the current instance info in the registry for the
                     // replicating node to sync itself with this one.
+                    // 如果 客户端实例续租请求中的最新修改时间戳（脏） 小于 本地注册表中相应实例的最新修改时间戳（脏）
+                    // 客户端因角色不同处理可能有下列情况：
+                    //     1. 如果是集群节点，同步复制给当前服务端，则当前服务端返回409且响应体中包含本地注册表的相应实例信息，让集群节点更新相应信息
+                    //     2. 如果是服务实例，为自己发起心跳续租请求，则当前服务端返回成功200
                     if (isReplication) {
                         logger.debug(
                                 "Time to sync, since the last dirty timestamp differs -"
@@ -332,6 +363,7 @@ public class InstanceResource {
             }
 
         }
+        // 返回成功200
         return Response.ok().build();
     }
 }

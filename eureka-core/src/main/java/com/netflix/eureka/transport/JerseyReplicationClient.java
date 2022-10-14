@@ -51,6 +51,7 @@ public class JerseyReplicationClient extends AbstractJerseyEurekaHttpClient impl
 
     @Override
     protected void addExtraHeaders(Builder webResource) {
+        // 添加 HEADER_REPLICATION = true 标记，表明这是一个集群节点间的同步复制请求
         webResource.header(PeerEurekaNode.HEADER_REPLICATION, "true");
     }
 

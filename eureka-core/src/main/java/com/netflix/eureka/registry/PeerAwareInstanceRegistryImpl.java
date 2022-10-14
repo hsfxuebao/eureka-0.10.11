@@ -404,7 +404,7 @@ public class PeerAwareInstanceRegistryImpl extends AbstractInstanceRegistry impl
                           final boolean isReplication) {
         // todo 调用父类AbstractInstanceRegistry 的cancel 方法进行本地注册表变更，服务下线就是删除对应的服务实例信息
         if (super.cancel(appName, id, isReplication)) {
-            // 将服务主动下线请求同步给Eureka Server 集群的其他节点。
+            // todo 将服务主动下线请求同步给Eureka Server 集群的其他节点。
             replicateToPeers(Action.Cancel, appName, id, null, null, isReplication);
 
             return true;
@@ -663,21 +663,26 @@ public class PeerAwareInstanceRegistryImpl extends AbstractInstanceRegistry impl
                                   InstanceStatus newStatus /* optional */, boolean isReplication) {
         Stopwatch tracer = action.getTimer().start();
         try {
+            // isReplication：是否是集群节点间同步复制的请求
             if (isReplication) {
+                // 如果是集群节点间同步复制的请求，最近一分钟处理同步复制请求数+1
                 numberOfReplicationsLastMin.increment();
             }
             // If it is a replication already, do not replicate again as this will create a poison replication
             if (peerEurekaNodes == Collections.EMPTY_LIST || isReplication) {
+                // 如果本地配置的集群节点为空，则不进行同步复制
+                // 如果是集群节点间同步复制的请求，则不进行同步复制（设想一下，如果集群节点间不断同步复制，那么会形成一个循环永不结束）
                 return;
             }
 
+            // peerEurekaNodes：存放集群节点
             for (final PeerEurekaNode node : peerEurekaNodes.getPeerEurekaNodes()) {
                 // If the url represents this host, do not replicate to yourself.
-                // 判断是否是自己
+                // 如果 url 表示的是当前主机，就不要复制给自己了
                 if (peerEurekaNodes.isThisMyUrl(node.getServiceUrl())) {
                     continue;
                 }
-                // todo
+                // todo 同步复制给集群节点处理
                 replicateInstanceActionsToPeers(action, appName, id, info, newStatus, node);
             }
         } finally {
@@ -696,23 +701,30 @@ public class PeerAwareInstanceRegistryImpl extends AbstractInstanceRegistry impl
         try {
             InstanceInfo infoFromRegistry;
             CurrentRequestVersion.set(Version.V2);
+            // 此时为 action = Action.Register
             switch (action) {
                 case Cancel:
+                    // 下架
                     node.cancel(appName, id);
                     break;
                 case Heartbeat:
+                    // 心跳续租
                     InstanceStatus overriddenStatus = overriddenInstanceStatusMap.get(id);
                     infoFromRegistry = getInstanceByAppAndId(appName, id, false);
+                    // todo 同步复制心跳给当前集群节点node
                     node.heartbeat(appName, id, infoFromRegistry, overriddenStatus, false);
                     break;
                 case Register:
+                    // 注册
                     node.register(info);
                     break;
                 case StatusUpdate:
+                    // 更改状态
                     infoFromRegistry = getInstanceByAppAndId(appName, id, false);
                     node.statusUpdate(appName, id, newStatus, infoFromRegistry);
                     break;
                 case DeleteStatusOverride:
+                    // 删除状态
                     infoFromRegistry = getInstanceByAppAndId(appName, id, false);
                     node.deleteStatusOverride(appName, id, infoFromRegistry);
                     break;

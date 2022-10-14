@@ -133,10 +133,12 @@ public class PeerEurekaNode {
      */
     public void register(final InstanceInfo info) throws Exception {
         long expiryTime = System.currentTimeMillis() + getLeaseRenewalOf(info);
+        // batchingDispatcher：批量处理执行器，把任务放入队列中，后台有专门的线程对队列进行处理
         batchingDispatcher.process(
                 taskId("register", info),
                 new InstanceReplicationTask(targetHost, Action.Register, info, null, true) {
                     public EurekaHttpResponse<Void> execute() {
+                        // todo 发起注册请求
                         return replicationClient.register(info);
                     }
                 },
@@ -196,34 +198,47 @@ public class PeerEurekaNode {
                           boolean primeConnection) throws Throwable {
         if (primeConnection) {
             // We do not care about the result for priming request.
+            //     1. 服务端处理客户端续租请求时，同步复制给集群节点， primeConnection = false
+            //     2. Aws 调用， primeConnection = true
             replicationClient.sendHeartBeat(appName, id, info, overriddenStatus);
             return;
         }
+        // 同步复制任务，实现了发送请求的处理方法和请求失败后的处理方法
         ReplicationTask replicationTask = new InstanceReplicationTask(targetHost, Action.Heartbeat, info, overriddenStatus, false) {
             @Override
             public EurekaHttpResponse<InstanceInfo> execute() throws Throwable {
+                // 发起续租请求
                 return replicationClient.sendHeartBeat(appName, id, info, overriddenStatus);
             }
 
             @Override
             public void handleFailure(int statusCode, Object responseEntity) throws Throwable {
+                // 简单打印相关日志
                 super.handleFailure(statusCode, responseEntity);
                 if (statusCode == 404) {
                     logger.warn("{}: missing entry.", getTaskName());
                     if (info != null) {
                         logger.warn("{}: cannot find instance id {} and hence replicating the instance with status {}",
                                 getTaskName(), info.getId(), info.getStatus());
+                        // 请求返回404，则立即重新发起注册请求同步复制到集群节点
+                        // 返回404是因为 本地注册表中相应实例的最新修改时间戳（脏） 大于 集群节点的最新修改时间戳（脏）
+                        // 表明本地服务端的实例信息比集群节点的新
                         register(info);
                     }
                 } else if (config.shouldSyncWhenTimestampDiffers()) {
+                    // “实例最新修改时间戳（脏）不同时是否同步实例信息”配置开启时
                     InstanceInfo peerInstanceInfo = (InstanceInfo) responseEntity;
                     if (peerInstanceInfo != null) {
+                        // 当 本地注册表中相应实例的最新修改时间戳（脏） 小于 集群节点的最新修改时间戳（脏）
+                        // 表明本地服务端的实例信息比集群节点的旧
+                        // 2.5 根据请求返回响应体，同步集群节点的实例信息到本地注册表
                         syncInstancesIfTimestampDiffers(appName, id, info, peerInstanceInfo);
                     }
                 }
             }
         };
         long expiryTime = System.currentTimeMillis() + getLeaseRenewalOf(info);
+        // batchingDispatcher 执行器，把任务放入队列中，后台有专门的线程对队列进行处理
         batchingDispatcher.process(taskId("heartbeat", info), replicationTask, expiryTime);
     }
 

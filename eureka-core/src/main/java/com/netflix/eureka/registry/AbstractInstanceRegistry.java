@@ -340,6 +340,7 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
      * in the remote peers as valid cancellations, so self preservation mode would not kick-in.
      */
     protected boolean internalCancel(String appName, String id, boolean isReplication) {
+        // 开启读锁
         read.lock();
         try {
             CANCEL.increment(isReplication);
@@ -361,6 +362,7 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
             if (leaseToCancel == null) {
                 CANCEL_NOT_FOUND.increment(isReplication);
                 logger.warn("DS: Registry: cancel failed because Lease is not registered for: {}/{}", appName, id);
+                // 如果获取不到实例租约信息，则返回 false
                 return false;
             } else {
                 // 变更实例剔除时间
@@ -369,11 +371,15 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
                 String vip = null;
                 String svip = null;
                 if (instanceInfo != null) {
+                    // 设置行为类型为删除
                     instanceInfo.setActionType(ActionType.DELETED);
                     // todo 放入最近变更队列中
                     recentlyChangedQueue.add(new RecentlyChangedItem(leaseToCancel));
+                    // 设置本地相应实例信息的最新修改时间戳（非脏时间戳）
                     instanceInfo.setLastUpdatedTimestamp();
+                    // 获取实例的虚拟互联网协议地址，如果未指定则默认为主机名
                     vip = instanceInfo.getVIPAddress();
+                    // 获取实例的安全虚拟互联网协议地址，如果未指定则默认为主机名
                     svip = instanceInfo.getSecureVipAddress();
                 }
                 // 删除实例对应的缓存数据
@@ -391,7 +397,7 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
                 updateRenewsPerMinThreshold();
             }
         }
-
+        // 关闭读锁
         return true;
     }
 
@@ -414,14 +420,25 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
         if (leaseToRenew == null) {
             RENEW_NOT_FOUND.increment(isReplication);
             logger.warn("DS: Registry: lease doesn't exist, registering resource: {} - {}", appName, id);
+            // 如果本地注册表中找不到实例租约信息，则返回 false
             return false;
         } else {
+            // 获取实例信息
             InstanceInfo instanceInfo = leaseToRenew.getHolder();
             if (instanceInfo != null) {
                 // touchASGCache(instanceInfo.getASGName());
+                // 根据规则，计算出 overriddenInstanceStatus
                 InstanceStatus overriddenInstanceStatus = this.getOverriddenInstanceStatus(
                         instanceInfo, leaseToRenew, isReplication);
                 if (overriddenInstanceStatus == InstanceStatus.UNKNOWN) {
+                    // 计算后覆盖状态如果为 UNKNOWN ，返回 false
+                    // 覆盖状态为 UNKNOWN 的情况：
+                    //     1. overiddenStatusMap 中相应实例的 overiddenStatus 为 UNKNOWN
+                    //     2. 本地注册表中实例的覆盖状态为 UNKNOWN
+                    // 出现的这种状况的原因：
+                    //     1. 客户端发起过删除状态请求（此时 overiddenStatusMap 中取出来为 null，overiddenStatus 为 UNKNOWN ）
+                    //     2. 客户端发起过修改状态请求（通过 actuator 设置 overiddenStatusMap 中相应的 overiddenStatus 为 UNKNOWN ）
+                    // 刚注册的情况 overiddenStatusMap 中取出来为 null，只有通过外部修改状态才会有值
                     logger.info("Instance status UNKNOWN possibly due to deleted override for instance {}"
                             + "; re-register required", instanceInfo.getId());
                     RENEW_NOT_FOUND.increment(isReplication);
@@ -433,11 +450,12 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
                                     + "Hence setting the status to overridden status", instanceInfo.getStatus().name(),
                                     overriddenInstanceStatus.name(),
                                     instanceInfo.getId());
+                    // 实例信息的实例状态和覆盖状态不一致时，将实例状态的值设置为覆盖状态的值，并且不记录本地实例信息中的最新修改时间戳（脏）
                     instanceInfo.setStatusWithoutDirty(overriddenInstanceStatus);
 
                 }
             }
-            // todo renew计数，自我保护机制会用到
+            // todo renew计数，最近一分钟处理的心跳续租数+1，自我保护机制会用到
             renewsLastMin.increment();
             // todo 续约
             leaseToRenew.renew();
@@ -489,6 +507,8 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
     @Override
     public void storeOverriddenStatusIfRequired(String appName, String id, InstanceStatus overriddenStatus) {
         InstanceStatus instanceStatus = overriddenInstanceStatusMap.get(id);
+        // 如果本地 overriddenInstanceStatusMap 中相应实例的 overriddenStatus 为 null 或者和集群节点同步复制请求中的 overriddenStatus 不一致
+        // 则更新本地的 overriddenInstanceStatusMap 和 instanceInfo 中的 overriddenStatus
         if ((instanceStatus == null) || (!overriddenStatus.equals(instanceStatus))) {
             // We might not have the overridden status if the server got
             // restarted -this will help us maintain the overridden state
