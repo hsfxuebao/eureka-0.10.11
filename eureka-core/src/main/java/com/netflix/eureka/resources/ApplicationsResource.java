@@ -122,6 +122,8 @@ public class ApplicationsResource {
                                   @Context UriInfo uriInfo,
                                   @Nullable @QueryParam("regions") String regionsStr) {
 
+        // 当 regionsStr 不为空字符串的时候 ，isRemoteRegionRequested = true
+        // 表示需要拉取的注册表包含远程 region 的
         boolean isRemoteRegionRequested = null != regionsStr && !regionsStr.isEmpty();
         String[] regions = null;
         if (!isRemoteRegionRequested) {
@@ -135,7 +137,9 @@ public class ApplicationsResource {
         // Check if the server allows the access to the registry. The server can
         // restrict access if it is not
         // ready to serve traffic depending on various reasons.
+        // todo 判断服务端是否允许访问注册表
         if (!registry.shouldAllowAccess(isRemoteRegionRequested)) {
+            // 不允许返回403，拒绝请求
             return Response.status(Status.FORBIDDEN).build();
         }
         CurrentRequestVersion.set(Version.toEnum(version));
@@ -146,6 +150,14 @@ public class ApplicationsResource {
             returnMediaType = MediaType.APPLICATION_XML;
         }
 
+        /** 定义缓存 key
+         * Key.EntityType.Application：Application 表示拉取注册表
+         * ResponseCacheImpl.ALL_APPS：ALL_APPS 表示全量拉取
+         * keyType：key 的类型，默认为 json
+         * CurrentRequestVersion.get()：请求的版本号
+         * EurekaAccept.fromString(eurekaAccept)：返回数据格式，默认为 full
+         * regions：远程 region 列表，不为空表示要从这些远程 region 拉取注册表
+         */
         // 先是构建一个key对象，注意ALL_APPS 这，说明是获取所有的注册实例信息
         Key cacheKey = new Key(Key.EntityType.Application,
                 ResponseCacheImpl.ALL_APPS,
@@ -155,7 +167,8 @@ public class ApplicationsResource {
         Response response;
         // 判断是否经过压缩
         if (acceptEncoding != null && acceptEncoding.contains(HEADER_GZIP_VALUE)) {
-            // todo 调用getGZIP(cacheKey)
+            // acceptEncoding = gzip 表示响应体里的数据需要压缩后返回
+            // todo 从 responseCache 响应缓存中获取注册表
             response = Response.ok(responseCache.getGZIP(cacheKey))
                     .header(HEADER_CONTENT_ENCODING, HEADER_GZIP_VALUE)
                     .header(HEADER_CONTENT_TYPE, returnMediaType)
@@ -212,6 +225,8 @@ public class ApplicationsResource {
         // If the delta flag is disabled in discovery or if the lease expiration
         // has been disabled, redirect clients to get all instances
         if ((serverConfig.shouldDisableDelta()) || (!registry.shouldAllowAccess(isRemoteRegionRequested))) {
+            // 如果本地服务端配置文件配置了禁止拉取增量注册表或不允许访问注册表
+            // 则返回403，拒绝请求
             return Response.status(Status.FORBIDDEN).build();
         }
 
@@ -231,7 +246,7 @@ public class ApplicationsResource {
             keyType = Key.KeyType.XML;
             returnMediaType = MediaType.APPLICATION_XML;
         }
-
+        // 定义缓存 key
         // cacheKye ALL_APPS_DELTA 增量拉取
         Key cacheKey = new Key(Key.EntityType.Application,
                 ResponseCacheImpl.ALL_APPS_DELTA,

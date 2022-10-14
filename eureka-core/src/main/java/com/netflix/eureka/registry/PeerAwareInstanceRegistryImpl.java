@@ -356,11 +356,15 @@ public class PeerAwareInstanceRegistryImpl extends AbstractInstanceRegistry impl
     @Override
     public boolean shouldAllowAccess(boolean remoteRegionRequired) {
         if (this.peerInstancesTransferEmptyOnStartup) {
+            // peerInstancesTransferEmptyOnStartup = true 时，表示当前服务端是集群节点中第一个启动的
+            // 这个时候注册表为空，不允许访问
+            // 要在一定时间后才能访问，默认当前服务端启动5分钟后
             if (!(System.currentTimeMillis() > this.startupTime + serverConfig.getWaitTimeInMsWhenSyncEmpty())) {
                 return false;
             }
         }
         if (remoteRegionRequired) {
+            // 如果需要从远程 region 拉取注册表，本地所有注册了的远程 region 只要有一个还没准备好，那么不允许访问
             for (RemoteRegionRegistry remoteRegionRegistry : this.regionNameVSRemoteRegistry.values()) {
                 if (!remoteRegionRegistry.isReadyForServingData()) {
                     return false;
@@ -467,7 +471,7 @@ public class PeerAwareInstanceRegistryImpl extends AbstractInstanceRegistry impl
                                 final boolean isReplication) {
         // todo 先调用父类的statusUpdate方法
         if (super.statusUpdate(appName, id, newStatus, lastDirtyTimestamp, isReplication)) {
-            // 同步给其他实例
+            // todo 处理成功后同步复制给集群节点
             replicateToPeers(Action.StatusUpdate, appName, id, null, newStatus, isReplication);
             return true;
         }
@@ -481,7 +485,7 @@ public class PeerAwareInstanceRegistryImpl extends AbstractInstanceRegistry impl
                                         boolean isReplication) {
         // todo 调用父类的deleteStatusOverride方法
         if (super.deleteStatusOverride(appName, id, newStatus, lastDirtyTimestamp, isReplication)) {
-            // 同步给其他实例
+            // todo 处理成功后同步复制给集群节点
             replicateToPeers(Action.DeleteStatusOverride, appName, id, null, null, isReplication);
             return true;
         }

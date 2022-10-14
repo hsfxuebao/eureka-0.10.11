@@ -231,7 +231,7 @@ public class PeerEurekaNode {
                     if (peerInstanceInfo != null) {
                         // 当 本地注册表中相应实例的最新修改时间戳（脏） 小于 集群节点的最新修改时间戳（脏）
                         // 表明本地服务端的实例信息比集群节点的旧
-                        // 2.5 根据请求返回响应体，同步集群节点的实例信息到本地注册表
+                        // todo  根据请求返回响应体，同步集群节点的实例信息到本地注册表
                         syncInstancesIfTimestampDiffers(appName, id, info, peerInstanceInfo);
                     }
                 }
@@ -379,8 +379,10 @@ public class PeerEurekaNode {
 
                 if (infoFromPeer.getOverriddenStatus() != null && !InstanceStatus.UNKNOWN.equals(infoFromPeer.getOverriddenStatus())) {
                     logger.warn("Overridden Status info -id {}, mine {}, peer's {}", id, info.getOverriddenStatus(), infoFromPeer.getOverriddenStatus());
+                    // todo 更新本地相应的实例信息（覆盖状态）
                     registry.storeOverriddenStatusIfRequired(appName, id, infoFromPeer.getOverriddenStatus());
                 }
+                // 注册实例信息到本地注册表
                 registry.register(infoFromPeer, true);
             }
         } catch (Throwable e) {

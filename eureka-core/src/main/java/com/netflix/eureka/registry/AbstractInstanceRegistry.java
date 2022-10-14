@@ -541,6 +541,7 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
     public boolean statusUpdate(String appName, String id,
                                 InstanceStatus newStatus, String lastDirtyTimestamp,
                                 boolean isReplication) {
+        // 打开读锁
         read.lock();
         try {
             STATUS_UPDATE.increment(isReplication);
@@ -554,7 +555,8 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
             if (lease == null) {
                 return false;
             } else {
-                // 续约，更新最近访问的时间戳
+                // 刷新续租过期时间
+                // 本地收到客户端变更状态请求，表明客户端还存活着，所以刷新续租过期时间
                 lease.renew();
                 InstanceInfo info = lease.getHolder();
                 // Lease is always created with its instance info object.
@@ -564,18 +566,20 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
                 }
                 if ((info != null) && !(info.getStatus().equals(newStatus))) {
                     // Mark service as UP if needed
-                    // 若更新为服务上线状态，
+                    // 若更新为服务上线状态，当本地相关实例信息不为空，且状态和客户端请求变更的状态不一致
                     if (InstanceStatus.UP.equals(newStatus)) {
-                        // 更新服务启动时间
+                        // 如果状态要变更为 UP ，且实例第一次启动，则记录启动时间
                         lease.serviceUp();
                     }
                     // This is NAC overridden status
-                    // add
+                    // 保存变更的状态到 overriddenInstanceStatusMap
                     overriddenInstanceStatusMap.put(id, newStatus);
                     // Set it for transfer of overridden status to replica on
                     // replica start up
+                    // 实例信息设置覆盖状态
                     info.setOverriddenStatus(newStatus);
                     long replicaDirtyTimestamp = 0;
+                    // 设置实例信息的状态，但不记录脏时间戳
                     info.setStatusWithoutDirty(newStatus);
                     if (lastDirtyTimestamp != null) {
                         replicaDirtyTimestamp = Long.parseLong(lastDirtyTimestamp);
@@ -583,17 +587,23 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
                     // If the replication's dirty timestamp is more than the existing one, just update
                     // it to the replica's.
                     if (replicaDirtyTimestamp > info.getLastDirtyTimestamp()) {
+                        // 如果 客户端实例的最新修改时间戳（脏） 大于 本地注册表中相应实例信息的最新修改时间戳（脏）
+                        // 则把本地的更新为客户端的
                         info.setLastDirtyTimestamp(replicaDirtyTimestamp);
                     }
+                    // 设置行为类型为变更
                     info.setActionType(ActionType.MODIFIED);
                     // 本次修改记录到recentlyChangedQueue中
                     recentlyChangedQueue.add(new RecentlyChangedItem(lease));
+                    // 设置本地相应实例信息的最新修改时间戳
                     info.setLastUpdatedTimestamp();
+                    // 让相应缓存失效
                     invalidateCache(appName, info.getVIPAddress(), info.getSecureVipAddress());
                 }
                 return true;
             }
         } finally {
+            // 关闭读锁
             read.unlock();
         }
     }
@@ -615,6 +625,7 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
                                         InstanceStatus newStatus,
                                         String lastDirtyTimestamp,
                                         boolean isReplication) {
+        // 打开读锁
         read.lock();
         try {
             STATUS_OVERRIDE_DELETE.increment(isReplication);
@@ -622,13 +633,15 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
             Map<String, Lease<InstanceInfo>> gMap = registry.get(appName);
             Lease<InstanceInfo> lease = null;
             if (gMap != null) {
-                // 知道对应的实例
+                // 找到对应的实例
                 lease = gMap.get(id);
             }
             if (lease == null) {
+                // 如果获取不到，返回 false
                 return false;
             } else {
-                // 续约，更新最近一次的续约的时间戳
+                // 刷新续租过期时间
+                // 本地收到客户端删除状态请求，表明客户端还存活着，所以刷新续租过期时间
                 lease.renew();
                 InstanceInfo info = lease.getHolder();
 
@@ -639,11 +652,13 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
                 }
 
                 // 将执行的Client的overriddenStatus从overriddenInstanceStatusMap中删除
+                // 获取覆盖状态，并从 overriddenInstanceStatusMap 中删除
                 InstanceStatus currentOverride = overriddenInstanceStatusMap.remove(id);
                 if (currentOverride != null && info != null) {
                     // 修改注册表中的该Client状态为UNKOWN
                     info.setOverriddenStatus(InstanceStatus.UNKNOWN);
                     // todo 如果提交的是CANCEL_OVERRIDE 则newStatus为UNKOWN
+                    // 设置实例信息的状态，但不标记 dirty
                     info.setStatusWithoutDirty(newStatus);
                     long replicaDirtyTimestamp = 0;
                     if (lastDirtyTimestamp != null) {
@@ -652,18 +667,23 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
                     // If the replication's dirty timestamp is more than the existing one, just update
                     // it to the replica's.
                     if (replicaDirtyTimestamp > info.getLastDirtyTimestamp()) {
+                        // 如果 客户端实例的最新修改时间戳（脏） 大于 本地注册表中相应实例信息的最新修改时间戳（脏）
+                        // 则把本地的更新为客户端的
                         info.setLastDirtyTimestamp(replicaDirtyTimestamp);
                     }
+                    // 设置行为类型为变更
                     info.setActionType(ActionType.MODIFIED);
                     // 将本次修改写入到recentlyChangedQueue缓存
                     recentlyChangedQueue.add(new RecentlyChangedItem(lease));
+                    // 设置本地相应实例信息的最新修改时间戳
                     info.setLastUpdatedTimestamp();
-                    // 清空缓存
+                    // 让相应缓存失效
                     invalidateCache(appName, info.getVIPAddress(), info.getSecureVipAddress());
                 }
                 return true;
             }
         } finally {
+            // 关闭读锁
             read.unlock();
         }
     }
@@ -815,6 +835,8 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
      * Same as calling {@link #getApplicationsFromMultipleRegions(String[])} with a <code>null</code> argument.
      */
     public Applications getApplicationsFromAllRemoteRegions() {
+        // getApplicationsFromMultipleRegions() 方法上面已分析
+        // 这里入参 allKnownRemoteRegions 表示获取服务端本地的注册表和所有注册到本地的远程 region 的注册表
         return getApplicationsFromMultipleRegions(allKnownRemoteRegions);
     }
 
@@ -824,6 +846,8 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
      */
     @Override
     public Applications getApplicationsFromLocalRegionOnly() {
+        // getApplicationsFromMultipleRegions() 方法上面已分析
+        // 这里入参 EMPTY_STR_ARRAY 表示只获取本地注册表
         return getApplicationsFromMultipleRegions(EMPTY_STR_ARRAY);
     }
 
@@ -858,6 +882,8 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
         } else {
             GET_ALL_CACHE_MISS.increment();
         }
+        // 新建一个注册表对象
+        // 该对象既是返回给客户端请求的注册表，也是 readWriteCacheMap 只读缓存中的 value
         Applications apps = new Applications();
         apps.setVersion(1L);
         // todo 遍历 注册表registry
@@ -868,31 +894,45 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
                 for (Entry<String, Lease<InstanceInfo>> stringLeaseEntry : entry.getValue().entrySet()) {
                     Lease<InstanceInfo> lease = stringLeaseEntry.getValue();
                     if (app == null) {
+                        // 从相应实例的租约信息中取出服务名，新建一个服务信息对象 app
+                        // 第一进入当前 for 循环时候触发
                         app = new Application(lease.getHolder().getAppName());
                     }
+                    // 相应实例的租约信息转换成实例信息，添加到 app
                     app.addInstance(decorateInstanceInfo(lease));
                 }
             }
             if (app != null) {
+                // 服务实例信息添加到 apps
                 apps.addApplication(app);
             }
         }
+        // 远程region
         if (includeRemoteRegion) {
+            // 遍历需要获取的远程 regions
             for (String remoteRegion : remoteRegions) {
+                // 获取已经注册到本地的远程 region 信息
                 RemoteRegionRegistry remoteRegistry = regionNameVSRemoteRegistry.get(remoteRegion);
                 if (null != remoteRegistry) {
+                    // 获取注册表信息
                     Applications remoteApps = remoteRegistry.getApplications();
                     for (Application application : remoteApps.getRegisteredApplications()) {
+                        // 判断是否允许该服务从注册表获取
+                        // 白名单机制
                         if (shouldFetchFromRemoteRegistry(application.getName(), remoteRegion)) {
                             logger.info("Application {}  fetched from the remote region {}",
                                     application.getName(), remoteRegion);
 
+                            // 根据实例名从 apps 中获取服务信息
                             Application appInstanceTillNow = apps.getRegisteredApplications(application.getName());
                             if (appInstanceTillNow == null) {
+                                // 如果上面处理本地注册表后， apps 没有相应服务信息，而注册到本地的远程 regions 注册表中有
+                                // 则新建一个服务信息添加到 apps
                                 appInstanceTillNow = new Application(application.getName());
                                 apps.addApplication(appInstanceTillNow);
                             }
                             for (InstanceInfo instanceInfo : application.getInstances()) {
+                                // 实例信息添加到服务信息
                                 appInstanceTillNow.addInstance(instanceInfo);
                             }
                         } else {
@@ -986,17 +1026,22 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
     @Deprecated
     public Applications getApplicationDeltas() {
         GET_ALL_CACHE_MISS_DELTA.increment();
+        // 新建一个注册表对象
         Applications apps = new Applications();
         apps.setVersion(responseCache.getVersionDelta().get());
         Map<String, Application> applicationInstancesMap = new HashMap<String, Application>();
+        // 开启写锁
         write.lock();
         try {
             // 遍历recentlyChangedQueue 队列（服务注册、续约、下线 的时候都会被塞到这最近改变队列中，这个队列只会保留最近三分钟的数据）
             Iterator<RecentlyChangedItem> iter = this.recentlyChangedQueue.iterator();
             logger.debug("The number of elements in the delta queue is : {}",
                     this.recentlyChangedQueue.size());
+            // 遍历最近更改队列
             while (iter.hasNext()) {
+                // 获取实例租约信息
                 Lease<InstanceInfo> lease = iter.next().getLeaseInfo();
+                // 获取实例信息
                 InstanceInfo instanceInfo = lease.getHolder();
                 logger.debug(
                         "The instance id {} is found with status {} and actiontype {}",
@@ -1004,30 +1049,40 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
                 Application app = applicationInstancesMap.get(instanceInfo
                         .getAppName());
                 if (app == null) {
+                    // applicationInstancesMap 中获取不到服务信息，则新建一个添加进去
+                    // 当服务信息第一次新建的时触发
                     app = new Application(instanceInfo.getAppName());
                     applicationInstancesMap.put(instanceInfo.getAppName(), app);
+                    // 服务信息添加到 apps
                     apps.addApplication(app);
                 }
+                // 相应实例的租约信息转换成实例信息，添加到 app
                 app.addInstance(new InstanceInfo(decorateInstanceInfo(lease)));
             }
 
             boolean disableTransparentFallback = serverConfig.disableTransparentFallbackToOtherRegion();
 
             if (!disableTransparentFallback) {
+                // 全量获取本地注册表信息，不包含远程 regions 的
                 Applications allAppsInLocalRegion = getApplications(false);
 
+                // 遍历所有注册到本地的远程 regions 信息
                 for (RemoteRegionRegistry remoteRegistry : this.regionNameVSRemoteRegistry.values()) {
+                    // 获取注册表增量信息
                     Applications applications = remoteRegistry.getApplicationDeltas();
+                    // 遍历注册表增量信息
                     for (Application application : applications.getRegisteredApplications()) {
                         Application appInLocalRegistry =
                                 allAppsInLocalRegion.getRegisteredApplications(application.getName());
                         if (appInLocalRegistry == null) {
+                            // 如果 注册到本地的远程 region 增量注册表的某个服务实例 在 本地注册表信息 中存在
+                            // 则该服务实例信息添加到 apps
                             apps.addApplication(application);
                         }
                     }
                 }
             }
-            // 获取全量注册表实例信息，生成一个hashcode，这个hashcode主要是带给客户端，
+            // 获取全量注册表实例信息(包含注册到本地的远程 region 的)，生成一个hashcode，这个hashcode主要是带给客户端，
             // 客户端收到响应后，先将最近变更是实例信息更新到自己的本地注册表中，
             // 然后对自己本地注册表实例信息生成一个hashcode ，与
             // Server响应回来的那个hashcode做比较，如果一样的话，说明本地注册表与Eureka Server的一样，
@@ -1062,6 +1117,7 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
      *
      */
     public Applications getApplicationDeltasFromMultipleRegions(String[] remoteRegions) {
+        // null 表示需要拉取所有注册到本地的远程 region 注册表
         if (null == remoteRegions) {
             remoteRegions = allKnownRemoteRegions; // null means all remote regions.
         }
@@ -1073,43 +1129,62 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
         } else {
             GET_ALL_CACHE_MISS_DELTA.increment();
         }
-
+        // 新建一个注册表对象
         Applications apps = new Applications();
         apps.setVersion(responseCache.getVersionDeltaWithRegions().get());
+        // 新建一个服务实例 map
         Map<String, Application> applicationInstancesMap = new HashMap<String, Application>();
+        // 开启写锁
         write.lock();
         try {
             Iterator<RecentlyChangedItem> iter = this.recentlyChangedQueue.iterator();
             logger.debug("The number of elements in the delta queue is :{}", this.recentlyChangedQueue.size());
+            // 遍历最近变更队列
             while (iter.hasNext()) {
+                // 获取实例租约信息
                 Lease<InstanceInfo> lease = iter.next().getLeaseInfo();
+                // 获取实例租约信息
                 InstanceInfo instanceInfo = lease.getHolder();
                 logger.debug("The instance id {} is found with status {} and actiontype {}",
                         instanceInfo.getId(), instanceInfo.getStatus().name(), instanceInfo.getActionType().name());
                 Application app = applicationInstancesMap.get(instanceInfo.getAppName());
                 if (app == null) {
+                    // applicationInstancesMap 中获取不到服务信息，则新建一个添加进去
+                    // 当服务信息第一次新建时触发
                     app = new Application(instanceInfo.getAppName());
                     applicationInstancesMap.put(instanceInfo.getAppName(), app);
+                    // 服务信息添加到 apps
                     apps.addApplication(app);
                 }
+                // 相应实例的租约信息转换成实例信息，添加到 app
                 app.addInstance(new InstanceInfo(decorateInstanceInfo(lease)));
             }
 
+            // 远程region
             if (includeRemoteRegion) {
+                // 遍历需要获取的远程 regions
                 for (String remoteRegion : remoteRegions) {
+                    // 获取已经注册到本地的远程 region 信息
                     RemoteRegionRegistry remoteRegistry = regionNameVSRemoteRegistry.get(remoteRegion);
                     if (null != remoteRegistry) {
+                        // 获取已经注册到本地的远程 region 信息
                         Applications remoteAppsDelta = remoteRegistry.getApplicationDeltas();
                         if (null != remoteAppsDelta) {
                             for (Application application : remoteAppsDelta.getRegisteredApplications()) {
+                                // 判断是否允许该服务从注册表获取
+                                // 白名单机制
                                 if (shouldFetchFromRemoteRegistry(application.getName(), remoteRegion)) {
+                                    // 根据实例名从 apps 中获取服务信息
                                     Application appInstanceTillNow =
                                             apps.getRegisteredApplications(application.getName());
                                     if (appInstanceTillNow == null) {
+                                        // 如果上面处理本地注册表后， apps 没有相应服务信息，而注册到本地的远程 regions 注册表中有
+                                        // 则新建一个服务信息添加到 apps
                                         appInstanceTillNow = new Application(application.getName());
                                         apps.addApplication(appInstanceTillNow);
                                     }
                                     for (InstanceInfo instanceInfo : application.getInstances()) {
+                                        // 实例信息添加到服务信息
                                         appInstanceTillNow.addInstance(new InstanceInfo(instanceInfo));
                                     }
                                 }
@@ -1119,6 +1194,9 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
                 }
             }
 
+            // 对本地全量注册表（包含注册到本地的远程 region 的）计算 hashCode 值，返回给客户端
+            // 客户端在收到服务端返回的注册表更新后，也对自己的注册表计算 hashCode 值
+            // 如果两个 hashCode 值不一致表示两端注册表不一致，客户端再发起全量拉取注册表请求
             Applications allApps = getApplicationsFromMultipleRegions(remoteRegions);
             apps.setAppsHashCode(allApps.getReconcileHashCode());
             return apps;

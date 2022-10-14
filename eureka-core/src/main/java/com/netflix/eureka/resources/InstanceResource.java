@@ -186,23 +186,27 @@ public class InstanceResource {
         try {
             if (registry.getInstanceByAppAndId(app.getName(), id) == null) {
                 logger.warn("Instance not found: {}/{}", app.getName(), id);
+                // 查询本地注册表中的实例信息，如果查询不到返回404
                 return Response.status(Status.NOT_FOUND).build();
             }
-            // todo
+            // todo 处理变更状态
             boolean isSuccess = registry.statusUpdate(app.getName(), id,
                     InstanceStatus.valueOf(newStatus), lastDirtyTimestamp,
                     "true".equals(isReplication));
 
             if (isSuccess) {
                 logger.info("Status updated: {} - {} - {}", app.getName(), id, newStatus);
+                // 处理成功返回200
                 return Response.ok().build();
             } else {
                 logger.warn("Unable to update status: {} - {} - {}", app.getName(), id, newStatus);
+                // 处理成功返回500
                 return Response.serverError().build();
             }
         } catch (Throwable e) {
             logger.error("Error updating instance {} for status {}", id,
                     newStatus);
+            // 处理异常返回500
             return Response.serverError().build();
         }
     }
@@ -220,6 +224,9 @@ public class InstanceResource {
      *         failure.
      *    处理客户端删除overridden状态请求
      */
+    // isReplication：是否是集群节点同步复制
+    // newStatusValue：客户端发起删除状态时，这里为 null
+    // lastDirtyTimestamp：最新修改时间戳（脏）
     @DELETE
     @Path("status")
     public Response deleteStatusUpdate(
@@ -227,25 +234,30 @@ public class InstanceResource {
             @QueryParam("value") String newStatusValue,
             @QueryParam("lastDirtyTimestamp") String lastDirtyTimestamp) {
         try {
+            // 查询本地注册表中的服务实例信息，如果查询不到返回404
             if (registry.getInstanceByAppAndId(app.getName(), id) == null) {
                 logger.warn("Instance not found: {}/{}", app.getName(), id);
                 return Response.status(Status.NOT_FOUND).build();
             }
 
+            // 客户端发过来的 newStatusValue = null ，所以 newStatus = UNKNOWN
             InstanceStatus newStatus = newStatusValue == null ? InstanceStatus.UNKNOWN : InstanceStatus.valueOf(newStatusValue);
-            // todo
+            // todo 处理删除状态
             boolean isSuccess = registry.deleteStatusOverride(app.getName(), id,
                     newStatus, lastDirtyTimestamp, "true".equals(isReplication));
 
             if (isSuccess) {
                 logger.info("Status override removed: {} - {}", app.getName(), id);
+                // 处理成功返回200
                 return Response.ok().build();
             } else {
                 logger.warn("Unable to remove status override: {} - {}", app.getName(), id);
+                // 处理失败返回500
                 return Response.serverError().build();
             }
         } catch (Throwable e) {
             logger.error("Error removing instance's {} status override", id);
+            // 处理异常返回500
             return Response.serverError().build();
         }
     }

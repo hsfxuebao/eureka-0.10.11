@@ -134,23 +134,33 @@ public class ResponseCacheImpl implements ResponseCache {
         long responseCacheUpdateIntervalMs = serverConfig.getResponseCacheUpdateIntervalMs();
         // todo 这个ReadWrite 缓存是使用的google guava包里面的CacheLoader缓存。
         // 如果从readWriteCacheMap中获取不到，会调用CacheLoader的load方法加载
+        // 构建读写缓存，指定了缓存的初始大小（默认1000）、过期时间（默认180s），实现了缓存过期方法、加载方法
         this.readWriteCacheMap =
                 CacheBuilder.newBuilder().initialCapacity(serverConfig.getInitialCapacityOfResponseCache())
                         .expireAfterWrite(serverConfig.getResponseCacheAutoExpirationInSeconds(), TimeUnit.SECONDS)
+                        // 指定监听缓存移除时的监听器
                         .removalListener(new RemovalListener<Key, Value>() {
+                            // 当监听到缓存移除时，执行过期方法
                             @Override
                             public void onRemoval(RemovalNotification<Key, Value> notification) {
                                 Key removedKey = notification.getKey();
                                 if (removedKey.hasRegions()) {
+                                    // 这里的 removedKey 指的是上面的缓存 key
+                                    // 如果过期缓存的缓存 key 里的远程 regions 不为空
+                                    // 则移除 regionSpecificKeys 相应的值（下面加载方法会放入）
                                     Key cloneWithNoRegions = removedKey.cloneWithoutRegions();
                                     regionSpecificKeys.remove(cloneWithNoRegions, removedKey);
                                 }
                             }
                         })
                         .build(new CacheLoader<Key, Value>() {
+                            // 如果读写缓存中获取不到指定缓存，则触发加载方法
                             @Override
                             public Value load(Key key) throws Exception {
                                 if (key.hasRegions()) {
+                                    // 如果缓存 key 里的远程 regions 不为空
+                                    // 则以“移除远程 regions 的缓存 key ”为 key ，“未移除远程 regions 的缓存 key ” 为 value ，
+                                    // 放入 regionSpecificKeys 中
                                     Key cloneWithNoRegions = key.cloneWithoutRegions();
                                     regionSpecificKeys.put(cloneWithNoRegions, key);
                                 }
@@ -162,7 +172,9 @@ public class ResponseCacheImpl implements ResponseCache {
 
         // todo 刷新readOnlyCacheMap缓存定时任务 默认30s
         if (shouldUseReadOnlyResponseCache) {
-            // todo
+            // todo 如果允许使用只读缓存，则开启一个定时任务，处理只读缓存和读写缓存之间的数据同步
+            // 固定时间重复执行的定时任务，默认30s后开始，每30s执行一次
+            // getCacheUpdateTask()：缓存同步定时任务
             timer.schedule(getCacheUpdateTask(),
                     new Date(((System.currentTimeMillis() / responseCacheUpdateIntervalMs) * responseCacheUpdateIntervalMs)
                             + responseCacheUpdateIntervalMs),
@@ -181,12 +193,14 @@ public class ResponseCacheImpl implements ResponseCache {
             @Override
             public void run() {
                 logger.debug("Updating the client cache from response cache");
+                // 遍历只读缓存的缓存 key
                 for (Key key : readOnlyCacheMap.keySet()) {
                     if (logger.isDebugEnabled()) {
                         logger.debug("Updating the client cache from response cache for key : {} {} {} {}",
                                 key.getEntityType(), key.getName(), key.getVersion(), key.getType());
                     }
                     try {
+                        // 设置版本号
                         CurrentRequestVersion.set(key.getVersion());
                         // 从readWrite 缓存中获取该key对应的value
                         Value cacheValue = readWriteCacheMap.get(key);
@@ -242,10 +256,13 @@ public class ResponseCacheImpl implements ResponseCache {
      *         applications.
      */
     public byte[] getGZIP(Key key) {
+        // 从缓存中获取注册表信息
+        // shouldUseReadOnlyResponseCache：表示是否允许使用只读缓存，默认为 true
         Value payload = getValue(key, shouldUseReadOnlyResponseCache);
         if (payload == null) {
             return null;
         }
+        // 返回压缩过的数据
         return payload.getGzipped();
     }
 
@@ -432,6 +449,7 @@ public class ResponseCacheImpl implements ResponseCache {
         try {
             String payload;
             switch (key.getEntityType()) {
+                // 主要关注该类型
                 case Application:
                     boolean isRemoteRegionRequested = key.hasRegions();
 
@@ -439,7 +457,9 @@ public class ResponseCacheImpl implements ResponseCache {
                     if (ALL_APPS.equals(key.getName())) {
                         if (isRemoteRegionRequested) {
                             tracer = serializeAllAppsWithRemoteRegionTimer.start();
-                            // todo
+                            // todo  需要获取的注册表，包含本地服务端的和客户端请求指定的远程 regions 的
+                            // 调用 getApplicationsFromMultipleRegions() 方法获取
+                            // getPayLoad()：返回结果前，转换格式，默认 json
                             payload = getPayLoad(key, registry.getApplicationsFromMultipleRegions(key.getRegions()));
                         } else {
                             tracer = serializeAllAppsTimer.start();
@@ -452,13 +472,14 @@ public class ResponseCacheImpl implements ResponseCache {
                             tracer = serializeDeltaAppsWithRemoteRegionTimer.start();
                             versionDeltaWithRegions.incrementAndGet();
                             versionDeltaWithRegionsLegacy.incrementAndGet();
+                            // todo 调用 getApplicationDeltasFromMultipleRegions() 方法获取
                             payload = getPayLoad(key,
                                     registry.getApplicationDeltasFromMultipleRegions(key.getRegions()));
                         } else {
                             tracer = serializeDeltaAppsTimer.start();
                             versionDelta.incrementAndGet();
                             versionDeltaLegacy.incrementAndGet();
-                            // todo
+                            // todo 获取注册表，调用 getApplicationDeltas() 方法获取
                             payload = getPayLoad(key, registry.getApplicationDeltas());
                         }
                     } else {
