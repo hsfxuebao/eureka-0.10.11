@@ -116,9 +116,9 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
     private final AtomicReference<EvictionTask> evictionTaskRef = new AtomicReference<EvictionTask>();
 
     protected String[] allKnownRemoteRegions = EMPTY_STR_ARRAY;
-    // 服务端统计最近一分钟预期收到客户端实例心跳续租的请求数
+    // 服务端统计最近一分钟预期收到客户端实例心跳续租的请求数 我心里能接受的最小心跳数
     protected volatile int numberOfRenewsPerMinThreshold;
-    // 服务端统计预期收到心跳续租的客户端实例数
+    // 服务端统计预期收到心跳续租的客户端实例数  期望心跳数
     protected volatile int expectedNumberOfClientsSendingRenews;
 
     protected final EurekaServerConfig serverConfig;
@@ -135,9 +135,12 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
         this.serverConfig = serverConfig;
         this.clientConfig = clientConfig;
         this.serverCodecs = serverCodecs;
+        // 最近取消的队列
         this.recentCanceledQueue = new CircularQueue<Pair<Long, String>>(1000);
+        // 最近注册的队列
         this.recentRegisteredQueue = new CircularQueue<Pair<Long, String>>(1000);
 
+        // renew注册器
         this.renewsLastMin = new MeasuredRate(1000 * 60 * 1);
 
         this.deltaRetentionTimer.schedule(getDeltaRetentionTask(),
@@ -249,6 +252,7 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
             // 不存在的话
             } else {
                 // The lease does not exist and hence it is a new registration
+                // 第一次注册的时候
                 synchronized (lock) {
                     // 这个是与自我保护机制有关的
                     if (this.expectedNumberOfClientsSendingRenews > 0) {
@@ -1387,7 +1391,7 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
      * 就是更新了完了注册表，就会去删除对应的缓存
      */
     private void invalidateCache(String appName, @Nullable String vipAddress, @Nullable String secureVipAddress) {
-        // todo invalidate cache
+        // todo invalidate cache 响应缓存失效
         responseCache.invalidate(appName, vipAddress, secureVipAddress);
     }
 

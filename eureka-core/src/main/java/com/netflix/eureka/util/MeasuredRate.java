@@ -37,7 +37,7 @@ public class MeasuredRate {
     private final AtomicLong lastBucket = new AtomicLong(0);
     // 当前一分钟正在统计的计数
     private final AtomicLong currentBucket = new AtomicLong(0);
-
+    // 定时任务执行间隔
     private final long sampleInterval;
     private final Timer timer;
 

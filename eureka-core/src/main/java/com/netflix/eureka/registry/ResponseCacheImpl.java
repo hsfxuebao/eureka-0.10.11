@@ -281,6 +281,8 @@ public class ResponseCacheImpl implements ResponseCache {
     public void invalidate(String appName, @Nullable String vipAddress, @Nullable String secureVipAddress) {
         for (Key.KeyType type : Key.KeyType.values()) {
             for (Version v : Version.values()) {
+                // 指定服务名、全量、增量相关的缓存失效
+                // 缓存 key 中没有远程 region
                 // todo 调用invalidate 方法清除
                 invalidate(
                         new Key(Key.EntityType.Application, appName, type, v, EurekaAccept.full),
@@ -310,13 +312,16 @@ public class ResponseCacheImpl implements ResponseCache {
             logger.debug("Invalidating the response cache key : {} {} {} {}, {}",
                     key.getEntityType(), key.getName(), key.getVersion(), key.getType(), key.getEurekaAccept());
 
+            // “无远程 regin 缓存 key ”的读写缓存失效
             // todo 清理对应key的所有缓存
             readWriteCacheMap.invalidate(key);
+            // 从 regionSpecificKeys 根据 “无远程 regin 缓存 key ” 取出 “有远程 regin 缓存 key ”
             Collection<Key> keysWithRegions = regionSpecificKeys.get(key);
             if (null != keysWithRegions && !keysWithRegions.isEmpty()) {
                 for (Key keysWithRegion : keysWithRegions) {
                     logger.debug("Invalidating the response cache key : {} {} {} {} {}",
                             key.getEntityType(), key.getName(), key.getVersion(), key.getType(), key.getEurekaAccept());
+                    // “有远程 regin 缓存 key ”的读写缓存失效
                     readWriteCacheMap.invalidate(keysWithRegion);
                 }
             }
