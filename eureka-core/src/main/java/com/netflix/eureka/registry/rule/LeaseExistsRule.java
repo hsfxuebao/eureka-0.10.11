@@ -21,6 +21,11 @@ public class LeaseExistsRule implements InstanceStatusOverrideRule {
         // This is for backward compatibility until all applications have ASG
         // names, otherwise while starting up
         // the client status may override status replicated from other servers
+        // 当执行该规则时，实例的状态为 UP 或 OUT_OF_SERVICE
+        // 该规则执行逻辑：如果不是集群节点同步复制的情况下，查看本地注册表相应实例的实例状态
+        // 如果实例状态存在，且为 UP 或 OUT_OF_SERVICE ，则直接返回相应状态
+        // 如果实例状态存在，且不为 UP 或 OUT_OF_SERVICE ，则需要下一个规则处理
+        // 如果实例状态不存在，则需要下一个规则处理
         if (!isReplication) {
             InstanceInfo.InstanceStatus existingStatus = null;
             if (existingLease != null) {

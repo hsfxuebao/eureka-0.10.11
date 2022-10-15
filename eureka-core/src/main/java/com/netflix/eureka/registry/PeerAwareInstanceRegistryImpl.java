@@ -131,6 +131,7 @@ public class PeerAwareInstanceRegistryImpl extends AbstractInstanceRegistry impl
     private Timer timer = new Timer(
             "ReplicaAwareInstanceRegistry - RenewalThresholdUpdater", true);
 
+    // 执行构造方法初始化时，添加了3个规则
     @Inject
     public PeerAwareInstanceRegistryImpl(
             EurekaServerConfig serverConfig,
@@ -215,8 +216,10 @@ public class PeerAwareInstanceRegistryImpl extends AbstractInstanceRegistry impl
     @Override
     public int syncUp() {
         // Copy entire entry from neighboring DS node
+        // 统计同步到本地注册表的实例数
         int count = 0;
 
+        // 默认重试5次，每次间隔30秒，成功一次则不再重试
         for (int i = 0; ((i < serverConfig.getRegistrySyncRetries()) && (count == 0)); i++) {
             if (i > 0) {
                 try {
@@ -226,11 +229,15 @@ public class PeerAwareInstanceRegistryImpl extends AbstractInstanceRegistry impl
                     break;
                 }
             }
+            // todo 服务端启动时，会拉取集群节点注册表中的服务实例信息
             Applications apps = eurekaClient.getApplications();
+            // 遍历服务信息
             for (Application app : apps.getRegisteredApplications()) {
+                // 遍历服务信息中的实例信息
                 for (InstanceInfo instance : app.getInstances()) {
                     try {
                         if (isRegisterable(instance)) {
+                            // todo 注册实例到本地注册表
                             register(instance, instance.getLeaseInfo().getDurationInSecs(), true);
                             count++;
                         }

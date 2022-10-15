@@ -291,6 +291,7 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
             }
 
             // Set the status based on the overridden status rules
+            // todo
             InstanceStatus overriddenInstanceStatus = getOverriddenInstanceStatus(registrant, existingLease, isReplication);
             registrant.setStatusWithoutDirty(overriddenInstanceStatus);
 
@@ -427,7 +428,7 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
             InstanceInfo instanceInfo = leaseToRenew.getHolder();
             if (instanceInfo != null) {
                 // touchASGCache(instanceInfo.getASGName());
-                // 根据规则，计算出 overriddenInstanceStatus
+                // todo 根据规则，计算出 overriddenInstanceStatus
                 InstanceStatus overriddenInstanceStatus = this.getOverriddenInstanceStatus(
                         instanceInfo, leaseToRenew, isReplication);
                 if (overriddenInstanceStatus == InstanceStatus.UNKNOWN) {
@@ -1557,8 +1558,10 @@ public abstract class AbstractInstanceRegistry implements InstanceRegistry {
     protected InstanceInfo.InstanceStatus getOverriddenInstanceStatus(InstanceInfo r,
                                                                     Lease<InstanceInfo> existingLease,
                                                                     boolean isReplication) {
+        // todo 获取规则
         InstanceStatusOverrideRule rule = getInstanceInfoOverrideRule();
         logger.debug("Processing override status using rule: {}", rule);
+        // todo 根据规则匹配处理
         return rule.apply(r, existingLease, isReplication).status();
     }
 

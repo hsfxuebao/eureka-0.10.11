@@ -19,6 +19,7 @@ public class AlwaysMatchInstanceStatusRule implements InstanceStatusOverrideRule
                                       boolean isReplication) {
         logger.debug("Returning the default instance status {} for instance {}", instanceInfo.getStatus(),
                 instanceInfo.getId());
+        // 直接返回相应客户端实例的状态
         return StatusOverrideResult.matchingStatus(instanceInfo.getStatus());
     }
 

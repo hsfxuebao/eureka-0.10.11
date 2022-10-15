@@ -20,6 +20,7 @@ public class FirstMatchWinsCompositeRule implements InstanceStatusOverrideRule {
 
     public FirstMatchWinsCompositeRule(InstanceStatusOverrideRule... rules) {
         this.rules = rules;
+        // todo 执行构造方法初始化时，设置了默认规则
         this.defaultRule = new AlwaysMatchInstanceStatusRule();
         // Let's build up and "cache" the rule name to be used by toString();
         List<String> ruleNames = new ArrayList<>(rules.length+1);
@@ -34,12 +35,14 @@ public class FirstMatchWinsCompositeRule implements InstanceStatusOverrideRule {
     public StatusOverrideResult apply(InstanceInfo instanceInfo,
                                       Lease<InstanceInfo> existingLease,
                                       boolean isReplication) {
+        // 遍历执行上述三个规则
         for (int i = 0; i < this.rules.length; ++i) {
             StatusOverrideResult result = this.rules[i].apply(instanceInfo, existingLease, isReplication);
             if (result.matches()) {
                 return result;
             }
         }
+        // 如果上述三个规则匹配执行后还没结果，执行默认规则
         return defaultRule.apply(instanceInfo, existingLease, isReplication);
     }
 
